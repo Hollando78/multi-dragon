@@ -74,6 +74,12 @@ export class WorldGenerator {
       pois.push(eggCavern);
     }
 
+    // Place a Ruined Castle near spawn for early testing
+    const nearbyCastle = this.placeRuinedCastle(terrainData, spawnPoint, poiRng);
+    if (nearbyCastle) {
+      pois.push(nearbyCastle);
+    }
+
     const poiConfigs = [
       { type: POI_TYPES.VILLAGE, count: 1, biomes: ['grassland', 'savanna', 'shrubland', 'forest'], priority: 1 },
       { type: POI_TYPES.RUINED_CASTLE, count: 1, biomes: ['hills', 'mountain', 'alpine'], priority: 2 },
@@ -125,6 +131,35 @@ export class WorldGenerator {
     }
 
     return pois;
+  }
+
+  // Try to place a ruined castle within 12-24 tiles of spawn in hilly/mountain biomes
+  private placeRuinedCastle(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
+    const size = terrainData.heightMap.length;
+    const suitableBiomes = ['hills', 'mountain', 'alpine'];
+    for (let radius = 12; radius <= 24; radius++) {
+      const candidates: Vector2[] = [];
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 16) {
+        const x = Math.floor(spawnPoint.x + Math.cos(angle) * radius);
+        const y = Math.floor(spawnPoint.y + Math.sin(angle) * radius);
+        if (x < 5 || y < 5 || x >= size - 5 || y >= size - 5) continue;
+        const biome = terrainData.biomeMap[y][x];
+        const height = terrainData.heightMap[y][x];
+        if (suitableBiomes.includes(biome) && height > 40) candidates.push({ x, y });
+      }
+      if (candidates.length) {
+        const position = rng.randomElement(candidates)!;
+        return {
+          id: rng.generateUUID('ruined-castle-near-spawn'),
+          type: POI_TYPES.RUINED_CASTLE,
+          position,
+          name: this.generatePOIName(POI_TYPES.RUINED_CASTLE, rng),
+          discovered: true, // make it visible for easy testing
+          seed: rng.generateUUID('ruined-castle-seed')
+        };
+      }
+    }
+    return null;
   }
 
   private placeSpawnVillage(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
