@@ -207,7 +207,7 @@ export class WorldGenerator {
           type: POI_TYPES.DARK_CAVE,
           position,
           name: 'Egg Cavern', // Special name for starter cave
-          discovered: false, // Hidden until found
+          discovered: true, // Visible so players can find it easily
           seed: rng.generateUUID('egg-cavern-seed')
         };
       }
