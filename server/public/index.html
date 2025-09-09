@@ -739,26 +739,42 @@ Click "Connect" to join world "alpha"
             }
           }
           
-          // Draw rivers
+          // Draw rivers with variable width
           if (worldData.world.rivers) {
-            ctx.strokeStyle = '#3b82f6';
-            ctx.lineWidth = Math.max(1, 2 * camera.zoom);
             for (const river of worldData.world.rivers) {
-              if (river.points.length > 1) {
-                ctx.beginPath();
-                for (let i = 0; i < river.points.length; i++) {
-                  const point = river.points[i];
-                  const worldPosX = point.x * baseTileSize;
-                  const worldPosY = point.y * baseTileSize;
-                  const screenX = cx + (worldPosX - camera.x) * camera.zoom;
-                  const screenY = cy + (worldPosY - camera.y) * camera.zoom;
-                  if (i === 0) {
-                    ctx.moveTo(screenX, screenY);
-                  } else {
-                    ctx.lineTo(screenX, screenY);
-                  }
+              if (river.points && river.points.length > 1) {
+                // Draw river as a series of line segments with varying width
+                for (let i = 0; i < river.points.length - 1; i++) {
+                  const point1 = river.points[i];
+                  const point2 = river.points[i + 1];
+                  
+                  // Calculate screen positions
+                  const worldPosX1 = point1.x * baseTileSize;
+                  const worldPosY1 = point1.y * baseTileSize;
+                  const screenX1 = cx + (worldPosX1 - camera.x) * camera.zoom;
+                  const screenY1 = cy + (worldPosY1 - camera.y) * camera.zoom;
+                  
+                  const worldPosX2 = point2.x * baseTileSize;
+                  const worldPosY2 = point2.y * baseTileSize;
+                  const screenX2 = cx + (worldPosX2 - camera.x) * camera.zoom;
+                  const screenY2 = cy + (worldPosY2 - camera.y) * camera.zoom;
+                  
+                  // Use gradient for river color (darker blue at wider parts)
+                  const avgWidth = (point1.width + point2.width) / 2;
+                  const widthFactor = Math.min(avgWidth / 8, 1);
+                  const blueValue = Math.floor(180 + widthFactor * 40);
+                  ctx.strokeStyle = `rgb(59, 130, ${blueValue})`;
+                  
+                  // Scale line width based on point width and zoom
+                  ctx.lineWidth = Math.max(1, avgWidth * camera.zoom);
+                  ctx.lineCap = 'round';
+                  ctx.lineJoin = 'round';
+                  
+                  ctx.beginPath();
+                  ctx.moveTo(screenX1, screenY1);
+                  ctx.lineTo(screenX2, screenY2);
+                  ctx.stroke();
                 }
-                ctx.stroke();
               }
             }
           }
@@ -1232,24 +1248,38 @@ Click "Connect" to join world "alpha"
           }
         }
         
-        // Draw rivers
+        // Draw rivers with variable width
         if (worldData.world.rivers) {
-          minimapCtx.strokeStyle = '#3b82f6';
-          minimapCtx.lineWidth = minimapState === 'fullscreen' ? 2 : 1;
           for (const river of worldData.world.rivers) {
-            if (river.points.length > 1) {
-              minimapCtx.beginPath();
-              for (let i = 0; i < river.points.length; i++) {
-                const point = river.points[i];
-                const pixelX = offsetX + point.x * scale;
-                const pixelY = offsetY + point.y * scale;
-                if (i === 0) {
-                  minimapCtx.moveTo(pixelX, pixelY);
-                } else {
-                  minimapCtx.lineTo(pixelX, pixelY);
-                }
+            if (river.points && river.points.length > 1) {
+              // Draw river segments with varying width
+              for (let i = 0; i < river.points.length - 1; i++) {
+                const point1 = river.points[i];
+                const point2 = river.points[i + 1];
+                
+                const pixelX1 = offsetX + point1.x * scale;
+                const pixelY1 = offsetY + point1.y * scale;
+                const pixelX2 = offsetX + point2.x * scale;
+                const pixelY2 = offsetY + point2.y * scale;
+                
+                // Calculate width for minimap (scaled down)
+                const avgWidth = (point1.width + point2.width) / 2;
+                const minimapWidth = minimapState === 'fullscreen' 
+                  ? Math.max(1, avgWidth * 0.5)
+                  : Math.max(0.5, avgWidth * 0.25);
+                
+                // Darker blue for wider sections
+                const widthFactor = Math.min(avgWidth / 8, 1);
+                const blueValue = Math.floor(180 + widthFactor * 40);
+                minimapCtx.strokeStyle = `rgb(59, 130, ${blueValue})`;
+                minimapCtx.lineWidth = minimapWidth;
+                minimapCtx.lineCap = 'round';
+                
+                minimapCtx.beginPath();
+                minimapCtx.moveTo(pixelX1, pixelY1);
+                minimapCtx.lineTo(pixelX2, pixelY2);
+                minimapCtx.stroke();
               }
-              minimapCtx.stroke();
             }
           }
         }

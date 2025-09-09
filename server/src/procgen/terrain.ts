@@ -12,13 +12,14 @@ import {
   clamp,
   smoothstep
 } from './constants.js';
+import { generateRivers, smoothRiverPath, type RiverSegment } from './rivers.js';
 
 export interface TerrainData {
   heightMap: number[][];
   moistureMap: number[][];
   temperatureMap: number[][];
   biomeMap: Biome[][];
-  rivers: { points: Vector2[]; width: number }[];
+  rivers: RiverSegment[];  // Now using the new river system
 }
 
 export class TerrainGenerator {
@@ -69,10 +70,18 @@ export class TerrainGenerator {
 
   generate(): TerrainData {
     const heightMap = this.generateHeightMap();
-    let moistureMap = this.generateMoistureMap(heightMap);
     
-    // Simple river generation (simplified from Dragon Isle)
-    const rivers = this.generateSimpleRivers(heightMap);
+    // Generate rivers using the new deterministic system
+    const riverSystem = generateRivers(heightMap, this.rng.generateUUID('rivers'));
+    
+    // Smooth river paths for more natural appearance
+    const rivers = riverSystem.segments.map(segment => ({
+      ...segment,
+      points: smoothRiverPath(segment.points, 2)
+    }));
+    
+    // Generate moisture map and apply river influence
+    let moistureMap = this.generateMoistureMap(heightMap);
     moistureMap = this.applyRiverMoisture(moistureMap, rivers);
     
     const temperatureMap = this.generateTemperatureMap(heightMap);
@@ -222,62 +231,13 @@ export class TerrainGenerator {
     return biomeMap;
   }
 
-  private generateSimpleRivers(heightMap: number[][]): { points: Vector2[]; width: number }[] {
-    // Simplified river generation - just a few random rivers
-    const rivers: { points: Vector2[]; width: number }[] = [];
-    const riverRng = this.rng.getSubRNG('rivers');
-    
-    for (let i = 0; i < 3; i++) {
-      const startX = riverRng.randomInt(20, this.size - 20);
-      const startY = riverRng.randomInt(20, this.size - 20);
-      
-      const points: Vector2[] = [];
-      let x = startX;
-      let y = startY;
-      
-      // Trace downhill for a bit
-      for (let step = 0; step < 50; step++) {
-        points.push({ x, y });
-        
-        // Find steepest descent
-        let bestX = x, bestY = y;
-        let bestHeight = heightMap[y][x];
-        
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            const nx = x + dx;
-            const ny = y + dy;
-            if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
-              if (heightMap[ny][nx] < bestHeight) {
-                bestHeight = heightMap[ny][nx];
-                bestX = nx;
-                bestY = ny;
-              }
-            }
-          }
-        }
-        
-        if (bestX === x && bestY === y) break; // No downhill
-        if (bestHeight <= SEA_LEVEL) break; // Reached water
-        
-        x = bestX;
-        y = bestY;
-      }
-      
-      if (points.length > 5) {
-        rivers.push({ points, width: riverRng.randomInt(1, 3) });
-      }
-    }
-    
-    return rivers;
-  }
-
-  private applyRiverMoisture(moistureMap: number[][], rivers: { points: Vector2[]; width: number }[]): number[][] {
+  private applyRiverMoisture(moistureMap: number[][], rivers: RiverSegment[]): number[][] {
     const result = moistureMap.map(row => [...row]);
     
     for (const river of rivers) {
       for (const point of river.points) {
-        const radius = river.width + 2;
+        // Use the point's specific width for moisture radius
+        const radius = Math.ceil(point.width) + 3;
         
         for (let dy = -radius; dy <= radius; dy++) {
           for (let dx = -radius; dx <= radius; dx++) {
@@ -287,7 +247,9 @@ export class TerrainGenerator {
             if (x >= 0 && x < this.size && y >= 0 && y < this.size) {
               const dist = Math.sqrt(dx * dx + dy * dy);
               if (dist <= radius) {
-                const moistureBoost = (1 - dist / radius) * 0.3;
+                // Stronger moisture boost for wider river sections
+                const widthFactor = point.width / 5;
+                const moistureBoost = (1 - dist / radius) * 0.3 * (0.5 + widthFactor);
                 result[y][x] = Math.min(1, result[y][x] + moistureBoost);
               }
             }
