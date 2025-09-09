@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Multiplayer Dragon Isle — Test Client</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 1rem; }
+      #log { height: 200px; overflow: auto; background: #111; color: #0f0; padding: .5rem; }
+      .row { display: flex; gap: .5rem; margin: .5rem 0; }
+      input, button, select { padding: .4rem; }
+      canvas { border: 1px solid #ccc; }
+    </style>
+  </head>
+  <body>
+    <h1>Dragon Isle — Realtime Test</h1>
+    <div class="row">
+      <label>World Seed: <input id="seed" value="alpha" /></label>
+      <button id="connect">Connect</button>
+      <span id="status">disconnected</span>
+    </div>
+    <div class="row">
+      <label>Channel: 
+        <select id="channel">
+          <option>local</option>
+          <option>world</option>
+        </select>
+      </label>
+      <input id="chat" placeholder="Type message and press Enter" style="flex:1" />
+    </div>
+    <div class="row">
+      <button id="interact">Interact POI</button>
+      <button id="breed">Breed (demo)</button>
+    </div>
+    <canvas id="view" width="512" height="384"></canvas>
+    <pre id="log"></pre>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const log = (m) => {
+        const el = document.getElementById('log');
+        el.textContent += `\n${new Date().toLocaleTimeString()} ${m}`;
+        el.scrollTop = el.scrollHeight;
+      };
+
+      let socket;
+      let me = { x: 0, y: 0 };
+      const others = new Map();
+
+      const canvas = document.getElementById('view');
+      const ctx = canvas.getContext('2d');
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // origin center
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        // me is blue
+        ctx.fillStyle = '#2b6cb0';
+        ctx.fillRect(cx + me.x - 5, cy + me.y - 5, 10, 10);
+        // others are gray
+        ctx.fillStyle = '#718096';
+        for (const p of others.values()) {
+          ctx.fillRect(cx + p.position.x - 4, cy + p.position.y - 4, 8, 8);
+        }
+        requestAnimationFrame(draw);
+      }
+      requestAnimationFrame(draw);
+
+      function setupSocket(seed) {
+        if (socket) socket.disconnect();
+        socket = io(`/world/${encodeURIComponent(seed)}`, { transports: ['websocket'], auth: {} });
+        const status = document.getElementById('status');
+        socket.on('connect', () => { status.textContent = 'connected'; log('connected'); });
+        socket.on('disconnect', (r) => { status.textContent = 'disconnected'; log('disconnected: ' + r); });
+        socket.on('welcome', (data) => { me.x = data.you.position.x; me.y = data.you.position.y; log('welcome'); });
+        socket.on('player-moved', (list) => {
+          // list of {userId, name, position}
+          others.clear();
+          for (const p of list) others.set(p.userId, p);
+        });
+        socket.on('chat-message', (m) => log(`[${m.channel}] ${m.from.name||m.from.userId}: ${m.message}`));
+        socket.on('chunk-state', (st) => log(`chunk-state ${st.chunkId} pois=${st.pois.length} npcs=${st.npcs.length}`));
+        socket.on('poi-interaction', (p) => log(`poi-interaction ${p.poiId} ${JSON.stringify(p.result||p.error)}`));
+        socket.on('breed-result', (r) => log(`breed-result ${r.poiId} ${JSON.stringify(r.offspring||r.error)}`));
+
+        // Movement with arrow/WASD
+        const speed = 100; // px per second
+        let keys = new Set();
+        window.onkeydown = (e) => keys.add(e.key.toLowerCase());
+        window.onkeyup = (e) => keys.delete(e.key.toLowerCase());
+        let last = performance.now();
+        function tick(t) {
+          const dt = (t - last) / 1000; last = t;
+          let dx = 0, dy = 0;
+          if (keys.has('arrowup') || keys.has('w')) dy -= speed * dt;
+          if (keys.has('arrowdown') || keys.has('s')) dy += speed * dt;
+          if (keys.has('arrowleft') || keys.has('a')) dx -= speed * dt;
+          if (keys.has('arrowright') || keys.has('d')) dx += speed * dt;
+          if (dx || dy) {
+            me.x += dx; me.y += dy;
+            socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+          }
+          requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      }
+
+      document.getElementById('connect').onclick = () => {
+        const seed = document.getElementById('seed').value || 'alpha';
+        setupSocket(seed);
+      };
+
+      document.getElementById('chat').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && socket && e.target.value.trim()) {
+          socket.emit('chat-message', { channel: document.getElementById('channel').value, message: e.target.value.trim() });
+          e.target.value = '';
+        }
+      });
+
+      document.getElementById('interact').onclick = () => {
+        if (!socket) return;
+        // demo: interact with a deterministic local poi id
+        const poiId = 'poi:0:0:0:0';
+        socket.emit('interact-poi', { poiId, action: 'discover' });
+      };
+      document.getElementById('breed').onclick = () => {
+        if (!socket) return;
+        const poiId = 'poi:0:0:1:0';
+        socket.emit('breed-request', { poiId, parentAId: 'a1', parentBId: 'b2' });
+      };
+    </script>
+  </body>
+  </html>

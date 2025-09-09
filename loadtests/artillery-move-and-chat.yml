@@ -1,0 +1,17 @@
+config:
+  target: "http://localhost:3004"
+  phases:
+    - duration: 60
+      arrivalRate: 20
+scenarios:
+  - name: ws connect move chat
+    engine: "ws"
+    flow:
+      - connect:
+          url: "ws://localhost:3004/world/alpha"
+      - loop:
+          - send: { emit: ["move-player", { x: "{{ $randomNumber(0,100) }}", y: "{{ $randomNumber(0,100) }}" }] }
+          - think: 0.1
+          - send: { emit: ["chat-message", { channel: "local", message: "hi" }] }
+          - think: 0.5
+        count: 50
