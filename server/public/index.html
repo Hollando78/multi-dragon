@@ -906,6 +906,10 @@ Click "Connect" to join world "alpha"
           wall: '#64748b',     // light gray (clearly visible)
           floor: '#94a3b8',    // lighter gray (walkable areas)
           entrance: '#fbbf24', // bright yellow (cave entrance)
+          
+          // Tower-specific cells
+          stairs_up: '#22c55e',   // green stairs
+          stairs_down: '#ef4444', // red stairs
         };
         return colors[cellType] || '#222';
       }
@@ -971,6 +975,8 @@ Click "Connect" to join world "alpha"
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           } else if (gameState.nearbyPOI.type === 'ruined_castle') {
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          } else if (gameState.nearbyPOI.type === 'wizards_tower') {
+            ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           }
         } else if (gameState.currentPOI) {
           // Exit prompt
@@ -982,6 +988,16 @@ Click "Connect" to join world "alpha"
             ctx.fillText('Press SPACE to exit cave', canvas.width / 2, canvas.height - 80);
           } else if (currentInterior && currentInterior.type === 'ruined_castle') {
             ctx.fillText('Press SPACE to exit castle', canvas.width / 2, canvas.height - 80);
+          } else if (currentInterior && currentInterior.type === 'wizards_tower') {
+            // If near stairs, show stair prompt instead
+            const stair = findNearbyStairs();
+            if (stair === 'up') {
+              ctx.fillText('Press SPACE to go up', canvas.width / 2, canvas.height - 80);
+            } else if (stair === 'down') {
+              ctx.fillText('Press SPACE to go down', canvas.width / 2, canvas.height - 80);
+            } else {
+              ctx.fillText('Press SPACE to exit tower', canvas.width / 2, canvas.height - 80);
+            }
           } else {
             ctx.fillText('Press SPACE to exit village', canvas.width / 2, canvas.height - 80);
           }
@@ -1128,8 +1144,14 @@ Click "Connect" to join world "alpha"
           if (nearbyEgg) {
             collectEgg(nearbyEgg);
           } else {
-            // Exit to overworld
-            exitPOI();
+            // Wizards Tower stairs handling
+            const stair = findNearbyStairs();
+            if (stair) {
+              changeTowerFloor(stair);
+            } else {
+              // Exit to overworld
+              exitPOI();
+            }
           }
         } else {
           // We're in overworld - try to enter nearby POI
@@ -1140,6 +1162,8 @@ Click "Connect" to join world "alpha"
             enterCave(nearbyPOI);
           } else if (nearbyPOI && nearbyPOI.type === 'ruined_castle') {
             enterCastle(nearbyPOI);
+          } else if (nearbyPOI && nearbyPOI.type === 'wizards_tower') {
+            enterTower(nearbyPOI);
           }
         }
       }
@@ -1189,6 +1213,67 @@ Click "Connect" to join world "alpha"
             log('[ERROR] Cave entry timed out - server may not be responding');
           }, 5000);
         }
+      }
+
+      function enterTower(poi) {
+        log('[SYSTEM] Entering ' + poi.name + '...');
+        console.log('Entering wizard\'s tower:', poi.id, 'Socket connected:', !!socket);
+        const cached = gameState.poiInteriors.get(poi.id);
+        if (cached) {
+          console.log('Using cached tower interior');
+          transitionToInterior(poi, cached);
+        } else {
+          console.log('Requesting tower interior from server for POI:', poi.id);
+          socket.emit('enter-poi', { poiId: poi.id });
+          setTimeout(() => {
+            console.log('No response from server after 5 seconds');
+            log('[ERROR] Tower entry timed out - server may not be responding');
+          }, 5000);
+        }
+      }
+
+      // Tower helper: detect nearby stairs (within 1 tile)
+      function findNearbyStairs() {
+        if (!gameState.currentPOI) return null;
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (!interior) return null;
+        const x = Math.floor(me.x);
+        const y = Math.floor(me.y);
+        const cell = interior.layout[y]?.[x];
+        if (!cell) return null;
+        if (cell.type === 'stairs_up') return 'up';
+        if (cell.type === 'stairs_down') return 'down';
+        return null;
+      }
+
+      // Tower helper: change floors and update layout/entities accordingly
+      function changeTowerFloor(direction) {
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (!interior || !interior.floors) return;
+        const current = interior.currentFloor || 0;
+        let next = current;
+        if (direction === 'up' && current < interior.floors.length - 1) next = current + 1;
+        if (direction === 'down' && current > 0) next = current - 1;
+        if (next === current) return;
+        const nextFloor = interior.floors[next];
+        interior.currentFloor = next;
+        interior.layout = nextFloor.layout;
+        interior.entities = nextFloor.entities;
+        interior.containers = nextFloor.containers;
+        // Position player at counterpart stairs
+        if (direction === 'up' && nextFloor.stairsDown) {
+          me.x = nextFloor.stairsDown.x;
+          me.y = nextFloor.stairsDown.y;
+        } else if (direction === 'down' && nextFloor.stairsUp) {
+          me.x = nextFloor.stairsUp.x;
+          me.y = nextFloor.stairsUp.y;
+        } else if (nextFloor.entrance) {
+          me.x = nextFloor.entrance.x;
+          me.y = nextFloor.entrance.y;
+        }
+        camera.x = me.x;
+        camera.y = me.y;
+        log(`[SYSTEM] Moved to tower floor ${next + 1}/${interior.floors.length}`);
       }
 
       function enterCastle(poi) {

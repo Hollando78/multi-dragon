@@ -18,6 +18,7 @@ import { wsRateLimit } from '../services/rateLimit.js';
 import { generateVillageInterior } from '../procgen/villageInterior.js';
 import { generateDarkCave } from '../procgen/caveInterior.js';
 import { generateRuinedCastle } from '../procgen/ruinedCastleInterior.js';
+import { generateWizardsTower } from '../procgen/wizardsTowerInterior.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
 
@@ -274,6 +275,8 @@ export function attachWorldNamespace(io: Namespace) {
             interior = generateDarkCave(poiId, poi.seed, { guaranteedEgg });
           } else if (poi.type === 'ruined_castle') {
             interior = generateRuinedCastle(poiId, poi.seed);
+          } else if (poi.type === 'wizards_tower') {
+            interior = generateWizardsTower(poiId, poi.seed);
           }
           
           if (interior) {
