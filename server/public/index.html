@@ -926,6 +926,8 @@ Click "Connect" to join world "alpha"
           archmage: '#8b5cf6',   // purple
           adept: '#22d3ee',      // cyan
           dragon_egg: '#f59e0b', // golden egg
+          keeper: '#eab308',     // yellow
+          boat: '#0ea5e9',       // blue
           bat: '#6b7280',        // gray bat
           slime: '#22c55e'       // green slime
         };
@@ -940,6 +942,8 @@ Click "Connect" to join world "alpha"
           guard: 'Guard',
           archmage: 'Archmage',
           adept: 'Adept',
+          keeper: 'Lighthouse Keeper',
+          boat: 'Boat',
           dragon_egg: 'Dragon Egg',
           bat: 'Bat',
           slime: 'Slime'
@@ -968,6 +972,8 @@ Click "Connect" to join world "alpha"
               ctx.fillText(`Location: Ruined Castle Interior`, 10, 65);
             } else if (currentInterior.type === 'wizards_tower') {
               ctx.fillText(`Location: Wizard's Tower`, 10, 65);
+            } else if (currentInterior.type === 'lighthouse') {
+              ctx.fillText(`Location: Lighthouse`, 10, 65);
             } else if (currentInterior.type === 'village') {
               ctx.fillText(`Location: Village Interior`, 10, 65);
             } else {

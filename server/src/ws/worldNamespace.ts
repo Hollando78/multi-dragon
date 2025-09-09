@@ -19,6 +19,7 @@ import { generateVillageInterior } from '../procgen/villageInterior.js';
 import { generateDarkCave } from '../procgen/caveInterior.js';
 import { generateRuinedCastle } from '../procgen/ruinedCastleInterior.js';
 import { generateWizardsTower } from '../procgen/wizardsTowerInterior.js';
+import { generateLighthouse } from '../procgen/lighthouseInterior.js';
 import { getRedis } from '../services/redis.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
@@ -304,6 +305,8 @@ export function attachWorldNamespace(io: Namespace) {
             interior = generateRuinedCastle(poiId, poi.seed, (poi as any).rarity || 'common');
           } else if (poi.type === 'wizards_tower') {
             interior = generateWizardsTower(poiId, poi.seed, (poi as any).rarity || 'common');
+          } else if (poi.type === 'lighthouse') {
+            interior = generateLighthouse(poiId, poi.seed, (poi as any).rarity || 'common');
           }
           
           if (interior) {

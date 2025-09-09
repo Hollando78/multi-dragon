@@ -9,6 +9,7 @@ import {
   BIOMES, 
   distance 
 } from './constants.js';
+import { SEA_LEVEL } from './constants.js';
 
 export interface POI {
   id: string;
@@ -98,7 +99,7 @@ export class WorldGenerator {
       { type: POI_TYPES.WIZARDS_TOWER, count: 1, biomes: ['forest', 'hills', 'tundra'], priority: 3 },
       { type: POI_TYPES.DARK_CAVE, count: 2, biomes: ['mountain', 'hills', 'taiga'], priority: 4 },
       { type: POI_TYPES.DRAGON_GROUNDS, count: 1, biomes: ['mountain', 'alpine'], priority: 5 },
-      { type: POI_TYPES.LIGHTHOUSE, count: 1, biomes: ['beach', 'coast'], priority: 6 },
+      { type: POI_TYPES.LIGHTHOUSE, count: 0, biomes: ['beach', 'coast'], priority: 6 },
       { type: POI_TYPES.ANCIENT_CIRCLE, count: 1, biomes: ['forest', 'grassland', 'shrubland'], priority: 7 }
     ];
 
@@ -142,6 +143,10 @@ export class WorldGenerator {
         }
       }
     }
+
+    // Place a Lighthouse on a prominent headland
+    const lighthouse = this.placeLighthouse(terrainData, poiRng, pois, minDistance);
+    if (lighthouse) pois.push(lighthouse);
 
     return pois;
   }
@@ -361,6 +366,52 @@ export class WorldGenerator {
     if (r < wCommon + wRare) return RARITY.RARE;
     if (r < wCommon + wRare + wEpic) return RARITY.EPIC;
     return RARITY.LEGENDARY;
+  }
+
+  // Choose a coastal tile that protrudes into the ocean (headland)
+  private placeLighthouse(terrainData: TerrainData, rng: DeterministicRNG, existing: POI[], minDistance: number): POI | null {
+    const size = terrainData.heightMap.length;
+    let best: { x: number; y: number; score: number } | null = null;
+    const biomeMap = terrainData.biomeMap;
+    // Scan with a small stride for performance
+    const stride = 2;
+    for (let y = 2; y < size - 2; y += stride) {
+      for (let x = 2; x < size - 2; x += stride) {
+        const biome = biomeMap[y][x];
+        if (biome !== 'coast' && biome !== 'beach') continue;
+        const h = terrainData.heightMap[y][x];
+        if (h <= SEA_LEVEL + 2) continue;
+        // Count ocean neighbors
+        let ocean8 = 0, land8 = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = x + dx, ny = y + dy;
+            const b = biomeMap[ny][nx];
+            if (b === 'ocean') ocean8++; else land8++;
+          }
+        }
+        // Headland heuristic: many ocean neighbors
+        const score = ocean8 * 2 - land8;
+        if (ocean8 >= 4 && score > (best?.score ?? -1)) {
+          const pos = { x, y };
+          if (existing.every(e => distance(pos, e.position) >= minDistance)) {
+            best = { x, y, score };
+          }
+        }
+      }
+    }
+    if (!best) return null;
+    const position = { x: best.x, y: best.y };
+    return {
+      id: rng.generateUUID('lighthouse-headland'),
+      type: POI_TYPES.LIGHTHOUSE,
+      position,
+      name: this.generatePOIName(POI_TYPES.LIGHTHOUSE, rng),
+      discovered: true,
+      seed: rng.generateUUID('lighthouse-seed'),
+      rarity: this.rollRarity(POI_TYPES.LIGHTHOUSE, rng)
+    };
   }
 
   private findLandSpawnPoint(terrainData: TerrainData): Vector2 {
