@@ -631,7 +631,7 @@ Click "Connect" to join world "alpha"
         
         // Choose rendering mode based on game state
         if (gameState.currentPOI) {
-          drawVillageInterior(cx, cy);
+          drawPOIInterior(cx, cy);
         } else {
           drawOverworld(cx, cy);
         }
@@ -787,11 +787,17 @@ Click "Connect" to join world "alpha"
         ctx.fillText('You', playerScreenX, playerScreenY - myPlayerSize/2 - 4);
       }
       
-      function drawVillageInterior(cx, cy) {
+      function drawPOIInterior(cx, cy) {
         const interior = gameState.poiInteriors.get(gameState.currentPOI);
         if (!interior) return;
         
-        // Village interior rendering
+        // Add cave-specific background for dark atmosphere
+        if (interior.type === 'dark_cave') {
+          ctx.fillStyle = '#0f1419'; // Very dark blue-gray background
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // POI interior rendering
         const tileSize = 16 * camera.zoom; // Larger tiles for interior
         
         // Calculate visible area
@@ -879,17 +885,20 @@ Click "Connect" to join world "alpha"
       
       function getCellColor(cellType) {
         const colors = {
+          // Village interior colors
           grass: '#65a30d',    // green
           road: '#92400e',     // brown
           house: '#374151',    // dark gray  
           tavern: '#7c2d12',   // dark brown
           shop: '#1e40af',     // blue
-          entrance: '#eab308', // yellow
           door: '#8B4513',     // saddle brown
-          wall: '#6b7280',     // gray
-          floor: '#d1d5db'     // light gray
+          
+          // Cave interior colors (darker, more atmospheric)
+          wall: '#2d3748',     // dark blue-gray (visible against black)
+          floor: '#4a5568',    // medium gray (walkable areas)
+          entrance: '#fbbf24', // bright yellow (cave entrance)
         };
-        return colors[cellType] || '#000';
+        return colors[cellType] || '#222';
       }
       
       function getEntityColor(entityType) {
