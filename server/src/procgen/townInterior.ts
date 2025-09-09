@@ -2,7 +2,7 @@ import { DeterministicRNG } from './rng.js';
 
 export interface Cell {
   type: 'grass' | 'road' | 'wall' | 'floor' | 'door' |
-        'tavern' | 'blacksmith' | 'alchemist' | 'bank' | 'library' | 'market' | 'guardhouse' | 'temple';
+        'house' | 'tavern' | 'blacksmith' | 'alchemist' | 'bank' | 'library' | 'market' | 'guardhouse' | 'temple';
   walkable: boolean;
   sprite?: string;
 }
@@ -25,6 +25,7 @@ export interface TownInterior {
   layout: Cell[][];
   entities: TownEntity[];
   entrance: { x: number; y: number };
+  buildings: Array<{ id: string; type: Cell['type']; x: number; y: number; size: number; door: { x: number; y: number } }>;
 }
 
 export function generateTownInterior(poiId: string, seed: string, rarity: 'common' | 'rare' | 'epic' | 'legendary' = 'common'): TownInterior {
@@ -58,7 +59,9 @@ export function generateTownInterior(poiId: string, seed: string, rarity: 'commo
   const entrance = { x: roadX, y: height - 2 };
   layout[entrance.y][entrance.x] = { type: 'door', walkable: true };
 
-  // Building placement helper
+  const buildings: TownInterior['buildings'] = [];
+
+  // Building placement helper (ensures one-tile spacing between buildings)
   function placeBuilding(type: Cell['type'], size: number): { x: number; y: number } | null {
     const maxAttempts = 80;
     for (let a = 0; a < maxAttempts; a++) {
@@ -77,6 +80,15 @@ export function generateTownInterior(poiId: string, seed: string, rarity: 'commo
           }
         }
       }
+      if (!clear) continue;
+      // Enforce one-tile spacing: surrounding margin must be grass
+      for (let yy = y - 1; yy <= y + size && clear; yy++) {
+        for (let xx = x - 1; xx <= x + size && clear; xx++) {
+          if (yy < 0 || xx < 0 || yy >= height || xx >= width) continue;
+          if (yy >= y && yy < y + size && xx >= x && xx < x + size) continue; // building footprint itself
+          if (layout[yy][xx].type !== 'grass' && layout[yy][xx].type !== 'road') clear = false;
+        }
+      }
       if (!clear || !nearRoad) continue;
       // Draw walls/floor
       for (let yy = y; yy < y + size; yy++) {
@@ -86,9 +98,11 @@ export function generateTownInterior(poiId: string, seed: string, rarity: 'commo
         }
       }
       // Door on nearest road side; for simplicity, bottom center
-      layout[y + size - 1][x + Math.floor(size / 2)] = { type: 'door', walkable: true };
+      const door = { x: x + Math.floor(size / 2), y: y + size - 1 };
+      layout[door.y][door.x] = { type: 'door', walkable: true };
       // Mark building footprint type overlay (for rendering hint)
       layout[y + 1][x + 1] = { type, walkable: true };
+      buildings.push({ id: `${type}-${x}-${y}`, type, x, y, size, door });
       return { x, y };
     }
     return null;
@@ -131,6 +145,28 @@ export function generateTownInterior(poiId: string, seed: string, rarity: 'commo
     if (t) entities.push({ id: rng.generateUUID('priest'), type: 'priest', position: { x: t.x + 2, y: t.y + 2 }, name: 'Priest', role: 'priest', dialogue: ['Blessings upon you.'] });
   }
 
+  // Numerous houses depending on rarity
+  const houseTarget = rarity === 'legendary' ? 30 : rarity === 'epic' ? 22 : rarity === 'rare' ? 16 : 10;
+  let placedHouses = 0;
+  for (let i = 0; i < houseTarget * 3 && placedHouses < houseTarget; i++) {
+    const h = placeBuilding('house', 5);
+    if (h) {
+      placedHouses++;
+      // Spawn 0-2 villagers per house
+      const vcount = rng.randomInt(0, 2);
+      for (let v = 0; v < vcount; v++) {
+        entities.push({
+          id: rng.generateUUID('villager-' + placedHouses + '-' + v),
+          type: 'villager',
+          position: { x: h.x + 2 + (v % 2), y: h.y + 2 },
+          name: 'Villager',
+          role: 'villager',
+          dialogue: ['Lovely day.', 'Welcome.']
+        });
+      }
+    }
+  }
+
   return {
     id: poiId,
     type: 'town',
@@ -139,7 +175,7 @@ export function generateTownInterior(poiId: string, seed: string, rarity: 'commo
     height,
     layout,
     entities,
-    entrance
+    entrance,
+    buildings
   };
 }
-

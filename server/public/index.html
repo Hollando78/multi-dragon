@@ -901,6 +901,32 @@ Click "Connect" to join world "alpha"
               ctx.beginPath();
               ctx.arc(screenX, screenY, entitySize * 0.4, 0, 2 * Math.PI);
               ctx.fill();
+            } else if (entity.type === 'portal') {
+              // Pulsing ring for ancient portal
+              const t = performance.now() / 500;
+              const r = entitySize * (0.6 + 0.15 * Math.sin(t));
+              ctx.strokeStyle = getEntityColor('portal');
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(screenX, screenY, r, 0, 2 * Math.PI);
+              ctx.stroke();
+            } else if (entity.type === 'druid') {
+              // Small green circle for druids
+              ctx.fillStyle = getEntityColor('druid');
+              ctx.beginPath();
+              ctx.arc(screenX, screenY, entitySize * 0.35, 0, 2 * Math.PI);
+              ctx.fill();
+            } else if (entity.type === 'megalith') {
+              // Upright stone slab
+              ctx.fillStyle = getEntityColor('megalith');
+              ctx.fillRect(screenX - (entitySize*0.2), screenY - entitySize*0.6, entitySize*0.4, entitySize*1.0);
+            } else if (entity.type === 'altar') {
+              // Small glowing square
+              ctx.fillStyle = getEntityColor('altar');
+              ctx.fillRect(screenX - entitySize*0.3, screenY - entitySize*0.3, entitySize*0.6, entitySize*0.6);
+              ctx.strokeStyle = '#ffffffaa';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(screenX - entitySize*0.3, screenY - entitySize*0.3, entitySize*0.6, entitySize*0.6);
             } else {
               // Draw regular NPC (rectangle)
               ctx.fillRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
@@ -1011,6 +1037,10 @@ Click "Connect" to join world "alpha"
           thrall: '#9ca3af',     // gray
           prisoner: '#60a5fa',   // blue
           gold_pile: '#eab308',  // yellow
+          druid: '#16a34a',      // emerald
+          megalith: '#94a3b8',   // slate
+          altar: '#fde68a',      // pale gold
+          portal: '#7c3aed',     // violet
           bat: '#6b7280',        // gray bat
           slime: '#22c55e'       // green slime
         };
@@ -1045,6 +1075,10 @@ Click "Connect" to join world "alpha"
           thrall: 'Thrall',
           prisoner: 'Prisoner',
           gold_pile: 'Gold',
+          druid: 'Druid',
+          megalith: 'Standing Stone',
+          altar: 'Altar',
+          portal: 'Ancient Portal',
           dragon_egg: 'Dragon Egg',
           bat: 'Bat',
           slime: 'Slime'

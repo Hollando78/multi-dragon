@@ -50,7 +50,33 @@ export function generateLighthouse(poiId: string, seed: string, rarity: Rarity =
 
     // Entrance at south
     const entrance = level === 0 ? { x: cx, y: height - (cy - radius) - 2 } : undefined;
-    if (entrance) grid[entrance.y][entrance.x] = { type: 'entrance', walkable: true };
+    if (entrance) {
+      // Mark entrance and carve a small corridor inward so players don't spawn in a sealed nook
+      grid[entrance.y][entrance.x] = { type: 'entrance', walkable: true };
+      // Carve 3x4 corridor going north from the entrance
+      const hallW = 3, hallH = 4;
+      const hx = Math.max(1, entrance.x - Math.floor(hallW / 2));
+      const hy = Math.max(1, entrance.y - hallH);
+      for (let yy = hy; yy <= entrance.y; yy++) {
+        for (let xx = hx; xx < hx + hallW; xx++) {
+          grid[yy][xx] = { type: 'floor', walkable: true };
+        }
+      }
+      // Extend corridor deeper towards the tower center to guarantee connectivity
+      for (let yy = Math.max(1, hy - 4); yy >= Math.max(1, cy - Math.floor(radius / 2)); yy--) {
+        for (let xx = hx; xx < hx + hallW; xx++) {
+          grid[yy][xx] = { type: 'floor', walkable: true };
+        }
+      }
+      // Create a gap in the circular wall directly south if any ring walls remain
+      for (let yy = entrance.y; yy >= Math.max(1, entrance.y - 6); yy--) {
+        if (grid[yy][entrance.x].type === 'wall') {
+          grid[yy][entrance.x] = { type: 'floor', walkable: true };
+        }
+      }
+      // Record a no-build corridor rectangle to keep outbuildings clear
+      (grid as any)._corridor = { x1: hx - 1, y1: Math.max(1, hy - 5), x2: hx + hallW, y2: entrance.y + 1 };
+    }
 
     // Stairs
     const stairsDown = level > 0 ? { x: cx - 2, y: cy } : undefined;
@@ -63,39 +89,56 @@ export function generateLighthouse(poiId: string, seed: string, rarity: Rarity =
 
     // Ground floor outbuildings: boathouse and shed attached to tower exterior (as internal rooms for simplicity)
     if (level === 0) {
+      const corridor = (grid as any)._corridor || { x1: 0, y1: 0, x2: 0, y2: 0 };
+      const overlapsCorridor = (x: number, y: number, w: number, h: number) => {
+        const r1 = { x1: x - 1, y1: y - 1, x2: x + w, y2: y + h };
+        const r2 = corridor;
+        return !(r1.x2 < r2.x1 || r2.x2 < r1.x1 || r1.y2 < r2.y1 || r2.y2 < r1.y1);
+      };
+      const placeRect = (w: number, h: number, doorSide: 'bottom' | 'left') => {
+        for (let attempts = 0; attempts < 60; attempts++) {
+          const x = rng.randomInt(2, width - w - 2);
+          const y = rng.randomInt(Math.max(2, cy + Math.floor(radius / 3)), Math.min(height - h - 2, cy + radius - 3));
+          // ensure area is inside tower and not overlapping corridor
+          let ok = true;
+          for (let yy = y - 1; yy <= y + h && ok; yy++) {
+            for (let xx = x - 1; xx <= x + w && ok; xx++) {
+              if (yy < 0 || xx < 0 || yy >= height || xx >= width) continue;
+              if (yy >= y && yy < y + h && xx >= x && xx < x + w) {
+                if (grid[yy][xx].type !== 'floor') ok = false;
+              } else {
+                if (grid[yy][xx].type === 'wall') ok = false;
+              }
+            }
+          }
+          if (!ok) continue;
+          if (overlapsCorridor(x, y, w, h)) continue;
+          // draw
+          for (let yy = y; yy < y + h; yy++) {
+            for (let xx = x; xx < x + w; xx++) {
+              const edge = yy === y || yy === y + h - 1 || xx === x || xx === x + w - 1;
+              grid[yy][xx] = edge ? { type: 'wall', walkable: false } : { type: 'floor', walkable: true };
+            }
+          }
+          let dx = x + Math.floor(w / 2), dy = y + h - 1;
+          if (doorSide === 'left') { dx = x; dy = y + Math.floor(h / 2); }
+          grid[dy][dx] = { type: 'door', walkable: true };
+          return { x, y, door: { x: dx, y: dy } };
+        }
+        return null;
+      };
       // Boathouse
-      const bw = 6, bh = 4;
-      const bx = Math.max(2, cx - Math.floor(bw / 2));
-      const by = Math.min(height - bh - 2, cy + radius - 3);
-      for (let y = by; y < by + bh; y++) {
-        for (let x = bx; x < bx + bw; x++) {
-          const edge = y === by || y === by + bh - 1 || x === bx || x === bx + bw - 1;
-          grid[y][x] = edge ? { type: 'wall', walkable: false } : { type: 'floor', walkable: true };
+      const b = placeRect(6, 4, 'bottom');
+      if (b) {
+        containers.push({ id: 'boat-chest', position: { x: b.x + 1, y: b.y + 2 }, opened: false, items: [] });
+        const boatChance = rarity === 'legendary' ? 0.6 : rarity === 'epic' ? 0.4 : rarity === 'rare' ? 0.25 : 0.1;
+        if (rng.random() < boatChance) {
+          entities.push({ id: 'boat-1', type: 'boat', name: 'Boat', position: { x: b.x + 3, y: b.y + 2 }, state: { collectible: true } });
         }
       }
-      grid[by + bh - 1][bx + Math.floor(bw / 2)] = { type: 'door', walkable: true };
-
       // Shed
-      const sw = 4, sh = 4;
-      const sx = Math.min(width - sw - 2, cx + radius - 3);
-      const sy = Math.max(2, cy - Math.floor(sh / 2));
-      for (let y = sy; y < sy + sh; y++) {
-        for (let x = sx; x < sx + sw; x++) {
-          const edge = y === sy || y === sy + sh - 1 || x === sx || x === sx + sw - 1;
-          grid[y][x] = edge ? { type: 'wall', walkable: false } : { type: 'floor', walkable: true };
-        }
-      }
-      grid[sy + Math.floor(sh / 2)][sx] = { type: 'door', walkable: true };
-
-      // Containers in outbuildings
-      containers.push({ id: 'boat-chest', position: { x: bx + 1, y: by + 2 }, opened: false, items: [] });
-      containers.push({ id: 'shed-chest', position: { x: sx + 2, y: sy + 2 }, opened: false, items: [] });
-
-      // Boat collectible chance increases with rarity
-      const boatChance = rarity === 'legendary' ? 0.6 : rarity === 'epic' ? 0.4 : rarity === 'rare' ? 0.25 : 0.1;
-      if (rng.random() < boatChance) {
-        entities.push({ id: 'boat-1', type: 'boat', name: 'Boat', position: { x: bx + Math.floor(bw / 2), y: by + Math.floor(bh / 2) }, state: { collectible: true } });
-      }
+      const s = placeRect(4, 4, 'left');
+      if (s) containers.push({ id: 'shed-chest', position: { x: s.x + 2, y: s.y + 2 }, opened: false, items: [] });
     }
 
     // Keeper on top floor
@@ -124,4 +167,3 @@ export function generateLighthouse(poiId: string, seed: string, rarity: Rarity =
 
   return interior as POIInterior;
 }
-

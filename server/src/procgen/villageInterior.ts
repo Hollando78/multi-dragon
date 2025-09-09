@@ -186,6 +186,14 @@ function placeBuildingNearRoad(
         }
       }
     }
+    // Enforce one-tile spacing margin around building
+    for (let by = y - 1; by <= y + buildingSize && areaClear; by++) {
+      for (let bx = x - 1; bx <= x + buildingSize && areaClear; bx++) {
+        if (by < 0 || bx < 0 || by >= height || bx >= width) continue;
+        if (by >= y && by < y + buildingSize && bx >= x && bx < x + buildingSize) continue;
+        if (layout[by][bx].type !== 'grass' && layout[by][bx].type !== 'road') areaClear = false;
+      }
+    }
     
     // Check if near road (adjacent tiles)
     for (let by = y - 1; by <= y + buildingSize && !nearRoad; by++) {

@@ -9,6 +9,7 @@ import {
   BIOMES, 
   distance 
 } from './constants.js';
+import { generateRoads } from './roads.js';
 import { SEA_LEVEL } from './constants.js';
 
 export interface POI {
@@ -32,6 +33,7 @@ export interface WorldSnapshot {
   rivers: { points: Vector2[]; width: number }[];
   pois: POI[];
   spawnPoint: Vector2;
+  roads?: Vector2[][];
 }
 
 export class WorldGenerator {
@@ -48,7 +50,7 @@ export class WorldGenerator {
     const spawnPoint = this.findLandSpawnPoint(terrainData);
     const pois = this.generatePOIs(terrainData, spawnPoint);
 
-    return {
+    const snapshot: WorldSnapshot = {
       seed: this.rng.generateUUID('world'),
       size: terrainData.heightMap.length,
       heightMap: terrainData.heightMap,
@@ -58,7 +60,14 @@ export class WorldGenerator {
       rivers: terrainData.rivers,
       pois,
       spawnPoint
-    };
+    } as any;
+
+    // Deterministic, aesthetic road network connecting settlements
+    try {
+      snapshot.roads = generateRoads(snapshot, this.rng.generateUUID('roads')) as any;
+    } catch {}
+
+    return snapshot;
   }
 
   private generatePOIs(terrainData: TerrainData, spawnPoint: Vector2): POI[] {
@@ -139,7 +148,7 @@ export class WorldGenerator {
                 type: config.type,
                 position,
                 name,
-                discovered: config.type === POI_TYPES.VILLAGE,
+                discovered: config.type === POI_TYPES.VILLAGE || config.type === POI_TYPES.TOWN,
                 seed: poiRng.generateUUID(`seed-${config.type}-${i}`),
                 rarity: this.rollRarity(config.type, poiRng)
               });
@@ -363,6 +372,7 @@ export class WorldGenerator {
   private generatePOIName(type: POIType, rng: DeterministicRNG): string {
     const names: Record<POIType, string[]> = {
       [POI_TYPES.VILLAGE]: ['Willowbrook', 'Meadowvale', 'Riverholm', 'Greenshire'],
+      [POI_TYPES.TOWN]: ['Greenshine', 'Stonehaven', 'Seabreak', 'Windermere', 'Oakridge', 'Highfield'],
       [POI_TYPES.RUINED_CASTLE]: ['Castle Dreadmoor', 'Fallen Keep', 'Shadowhold Ruins', 'Grimfort'],
       [POI_TYPES.WIZARDS_TOWER]: ['Arcane Spire', 'Mystic Tower', 'Sage\'s Pinnacle', 'Crystal Tower'],
       [POI_TYPES.DARK_CAVE]: ['Shadow Cavern', 'Gloom Hollow', 'Whispering Cave', 'Echo Depths'],

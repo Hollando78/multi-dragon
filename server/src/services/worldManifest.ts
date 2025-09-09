@@ -30,7 +30,8 @@ export function manifestForSeed(seed: string) {
         rarity: poi.rarity,
         unique: poi.unique || false
       })),
-      rivers: world.rivers
+      rivers: world.rivers,
+      roads: (world as any).roads || []
     }
   };
 
