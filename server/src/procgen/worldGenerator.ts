@@ -82,7 +82,8 @@ export class WorldGenerator {
 
     const poiConfigs = [
       { type: POI_TYPES.VILLAGE, count: 1, biomes: ['grassland', 'savanna', 'shrubland', 'forest'], priority: 1 },
-      { type: POI_TYPES.RUINED_CASTLE, count: 1, biomes: ['hills', 'mountain', 'alpine'], priority: 2 },
+      // Ruined castles should be reachable; avoid 'mountain' which is unwalkable
+      { type: POI_TYPES.RUINED_CASTLE, count: 1, biomes: ['hills', 'alpine'], priority: 2 },
       { type: POI_TYPES.WIZARDS_TOWER, count: 1, biomes: ['forest', 'hills', 'tundra'], priority: 3 },
       { type: POI_TYPES.DARK_CAVE, count: 2, biomes: ['mountain', 'hills', 'taiga'], priority: 4 },
       { type: POI_TYPES.DRAGON_GROUNDS, count: 1, biomes: ['mountain', 'alpine'], priority: 5 },
@@ -136,7 +137,8 @@ export class WorldGenerator {
   // Try to place a ruined castle within 12-24 tiles of spawn in hilly/mountain biomes
   private placeRuinedCastle(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
     const size = terrainData.heightMap.length;
-    const suitableBiomes = ['hills', 'mountain', 'alpine'];
+    // Keep ruined castles off 'mountain' (unwalkable) to ensure the player can reach them
+    const suitableBiomes = ['hills', 'alpine'];
     for (let radius = 12; radius <= 24; radius++) {
       const candidates: Vector2[] = [];
       for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 16) {
