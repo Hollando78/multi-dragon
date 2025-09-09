@@ -803,10 +803,12 @@ Click "Connect" to join world "alpha"
         // Calculate visible area
         const viewWidth = cx / camera.zoom;
         const viewHeight = cy / camera.zoom;
+        const interiorWidth = interior.width || (interior.layout && interior.layout[0] ? interior.layout[0].length : 0);
+        const interiorHeight = interior.height || (interior.layout ? interior.layout.length : 0);
         const startX = Math.max(0, Math.floor((camera.x - viewWidth) / 16));
-        const endX = Math.min(interior.width - 1, Math.ceil((camera.x + viewWidth) / 16));
+        const endX = Math.min(interiorWidth - 1, Math.ceil((camera.x + viewWidth) / 16));
         const startY = Math.max(0, Math.floor((camera.y - viewHeight) / 16));
-        const endY = Math.min(interior.height - 1, Math.ceil((camera.y + viewHeight) / 16));
+        const endY = Math.min(interiorHeight - 1, Math.ceil((camera.y + viewHeight) / 16));
         
         // Draw interior tiles
         for (let y = startY; y <= endY; y++) {
@@ -893,9 +895,9 @@ Click "Connect" to join world "alpha"
           shop: '#1e40af',     // blue
           door: '#8B4513',     // saddle brown
           
-          // Cave interior colors (darker, more atmospheric)
-          wall: '#2d3748',     // dark blue-gray (visible against black)
-          floor: '#4a5568',    // medium gray (walkable areas)
+          // Cave interior colors (bright, clearly visible)
+          wall: '#64748b',     // light gray (clearly visible)
+          floor: '#94a3b8',    // lighter gray (walkable areas)
           entrance: '#fbbf24', // bright yellow (cave entrance)
         };
         return colors[cellType] || '#222';
