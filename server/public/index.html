@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Multiplayer Dragon Isle — Test Client</title>
+    <!-- Cache bust: v12:37 -->
     <style>
       * {
         margin: 0;
@@ -542,18 +543,21 @@ Click "Connect" to join world "alpha"
       // Unwalkable biomes
       const UNWALKABLE_BIOMES = new Set(['ocean', 'mountain']);
       
-      // Check if a world position is walkable
-      function isWalkable(worldX, worldY) {
-        // Handle village interiors
+      // Check if a position is walkable (coordinates already in correct space)
+      function isWalkable(x, y) {
+        // Handle POI interiors
         if (gameState.currentPOI) {
           const interior = gameState.poiInteriors.get(gameState.currentPOI);
           if (interior) {
-            // Convert pixel coordinates to interior grid coordinates
-            const gridX = Math.floor(worldX / 16);
-            const gridY = Math.floor(worldY / 16);
+            // Interior coordinates are already in interior grid space
+            const gridX = Math.floor(x);
+            const gridY = Math.floor(y);
             
             // Check interior bounds
-            if (gridX < 0 || gridY < 0 || gridX >= interior.width || gridY >= interior.height) {
+            const interiorWidth = interior.width || (interior.layout && interior.layout[0] ? interior.layout[0].length : 0);
+            const interiorHeight = interior.height || (interior.layout ? interior.layout.length : 0);
+            
+            if (gridX < 0 || gridY < 0 || gridX >= interiorWidth || gridY >= interiorHeight) {
               return false;
             }
             
@@ -566,8 +570,8 @@ Click "Connect" to join world "alpha"
         // Handle overworld movement
         if (!worldData || !worldData.world.biomeMap) return true; // Allow movement if no world data
         
-        const tileX = Math.floor(worldX / 8);
-        const tileY = Math.floor(worldY / 8);
+        const tileX = Math.floor(x / 8);
+        const tileY = Math.floor(y / 8);
         
         if (tileX < 0 || tileY < 0 || tileX >= worldData.world.size || tileY >= worldData.world.size) {
           return false; // Outside world bounds
@@ -588,35 +592,36 @@ Click "Connect" to join world "alpha"
       };
 
       function updateCamera() {
-        // Calculate player position relative to camera center
-        const playerScreenX = me.x - camera.x;
-        const playerScreenY = me.y - camera.y;
-        
-        // Check if player is outside the deadzone (scaled by zoom level)
-        let targetCameraX = camera.x;
-        let targetCameraY = camera.y;
-        
-        // Calculate zoom-adjusted deadzone size
-        const deadzoneWidth = BASE_DEADZONE_WIDTH / camera.zoom;
-        const deadzoneHeight = BASE_DEADZONE_HEIGHT / camera.zoom;
-        
-        // Horizontal deadzone check
-        if (playerScreenX < -deadzoneWidth / 2) {
-          targetCameraX = me.x + deadzoneWidth / 2;
-        } else if (playerScreenX > deadzoneWidth / 2) {
-          targetCameraX = me.x - deadzoneWidth / 2;
+        if (gameState.currentPOI) {
+          // Interior camera: directly follow player in grid coordinates
+          camera.x = me.x;
+          camera.y = me.y;
+        } else {
+          // Overworld camera: use deadzone system
+          const playerScreenX = me.x - camera.x;
+          const playerScreenY = me.y - camera.y;
+          
+          let targetCameraX = camera.x;
+          let targetCameraY = camera.y;
+          
+          const deadzoneWidth = BASE_DEADZONE_WIDTH / camera.zoom;
+          const deadzoneHeight = BASE_DEADZONE_HEIGHT / camera.zoom;
+          
+          if (playerScreenX < -deadzoneWidth / 2) {
+            targetCameraX = me.x + deadzoneWidth / 2;
+          } else if (playerScreenX > deadzoneWidth / 2) {
+            targetCameraX = me.x - deadzoneWidth / 2;
+          }
+          
+          if (playerScreenY < -deadzoneHeight / 2) {
+            targetCameraY = me.y + deadzoneHeight / 2;
+          } else if (playerScreenY > deadzoneHeight / 2) {
+            targetCameraY = me.y - deadzoneHeight / 2;
+          }
+          
+          camera.x += (targetCameraX - camera.x) * CAMERA_SMOOTHING;
+          camera.y += (targetCameraY - camera.y) * CAMERA_SMOOTHING;
         }
-        
-        // Vertical deadzone check
-        if (playerScreenY < -deadzoneHeight / 2) {
-          targetCameraY = me.y + deadzoneHeight / 2;
-        } else if (playerScreenY > deadzoneHeight / 2) {
-          targetCameraY = me.y - deadzoneHeight / 2;
-        }
-        
-        // Smooth camera movement
-        camera.x += (targetCameraX - camera.x) * CAMERA_SMOOTHING;
-        camera.y += (targetCameraY - camera.y) * CAMERA_SMOOTHING;
       }
 
       function draw() {
@@ -798,24 +803,25 @@ Click "Connect" to join world "alpha"
         }
         
         // POI interior rendering
-        const tileSize = 16 * camera.zoom; // Larger tiles for interior
+        const tileSize = 16 * camera.zoom; // Larger tiles for interior (tile units)
         
         // Calculate visible area
         const viewWidth = cx / camera.zoom;
         const viewHeight = cy / camera.zoom;
         const interiorWidth = interior.width || (interior.layout && interior.layout[0] ? interior.layout[0].length : 0);
         const interiorHeight = interior.height || (interior.layout ? interior.layout.length : 0);
-        const startX = Math.max(0, Math.floor((camera.x - viewWidth) / 16));
-        const endX = Math.min(interiorWidth - 1, Math.ceil((camera.x + viewWidth) / 16));
-        const startY = Math.max(0, Math.floor((camera.y - viewHeight) / 16));
-        const endY = Math.min(interiorHeight - 1, Math.ceil((camera.y + viewHeight) / 16));
+        const startX = Math.max(0, Math.floor(camera.x - viewWidth / 16));
+        const endX = Math.min(interiorWidth - 1, Math.ceil(camera.x + viewWidth / 16));
+        const startY = Math.max(0, Math.floor(camera.y - viewHeight / 16));
+        const endY = Math.min(interiorHeight - 1, Math.ceil(camera.y + viewHeight / 16));
         
         // Draw interior tiles
         for (let y = startY; y <= endY; y++) {
           for (let x = startX; x <= endX; x++) {
             const cell = interior.layout[y][x];
-            const screenX = cx + (x * 16 - camera.x) * camera.zoom;
-            const screenY = cy + (y * 16 - camera.y) * camera.zoom;
+            // camera.x/y are in tile units for interiors; convert tile delta to pixels
+            const screenX = cx + (x - camera.x) * tileSize;
+            const screenY = cy + (y - camera.y) * tileSize;
             
             // Draw cell based on type
             ctx.fillStyle = getCellColor(cell.type);
@@ -837,8 +843,9 @@ Click "Connect" to join world "alpha"
         // Draw entities (NPCs)
         if (interior.entities) {
           for (const entity of interior.entities) {
-            const screenX = cx + (entity.position.x * 16 - camera.x) * camera.zoom;
-            const screenY = cy + (entity.position.y * 16 - camera.y) * camera.zoom;
+            // Use tile delta times tileSize; camera.* are tile units
+            const screenX = cx + (entity.position.x - camera.x) * tileSize;
+            const screenY = cy + (entity.position.y - camera.y) * tileSize;
             const entitySize = 12 * camera.zoom;
             
             // Draw entity based on type
@@ -1184,8 +1191,9 @@ Click "Connect" to join world "alpha"
         if (!interior || !interior.entities) return null;
         
         // Find dragon eggs within 1.5 tiles of player
-        const playerTileX = Math.floor(me.x / 16);
-        const playerTileY = Math.floor(me.y / 16);
+        // In interiors, me.x/me.y are already in tile units
+        const playerTileX = Math.floor(me.x);
+        const playerTileY = Math.floor(me.y);
         
         for (const entity of interior.entities) {
           if (entity.type === 'dragon_egg') {
@@ -1235,11 +1243,13 @@ Click "Connect" to join world "alpha"
         gameState.overworldPosition = { x: me.x, y: me.y };
         
         gameState.currentPOI = poi.id;
-        // Set player to village entrance (convert grid coordinates to interior pixel coordinates)
-        me.x = interior.entrance.x * 16; // Convert grid to interior pixels (16px per cell)
-        me.y = interior.entrance.y * 16;
+        // Set player to interior entrance coordinates (keep in grid space)
+        console.log('Entering POI:', poi.name, 'entrance:', interior.entrance);
+        me.x = interior.entrance.x;
+        me.y = interior.entrance.y;
         camera.x = me.x;
         camera.y = me.y;
+        console.log('Player position set to:', me.x, me.y);
       }
       
       // Movement setup - Initialize once, outside of socket setup
@@ -1271,33 +1281,49 @@ Click "Connect" to join world "alpha"
         last = t;
         
         let dx = 0, dy = 0;
-        // Reduce speed in village interiors to account for larger tile size
-        const currentSpeed = gameState.currentPOI ? speed * 0.6 : speed;
+        // Different movement speeds for different coordinate systems
+        const currentSpeed = gameState.currentPOI ? 3 : speed; // Grid units per second for interiors
         if (keys.has('arrowup') || keys.has('w')) dy -= currentSpeed * dt;
         if (keys.has('arrowdown') || keys.has('s')) dy += currentSpeed * dt;
         if (keys.has('arrowleft') || keys.has('a')) dx -= currentSpeed * dt;
         if (keys.has('arrowright') || keys.has('d')) dx += currentSpeed * dt;
         
         if ((dx || dy) && socket) {
-          // Calculate new position
-          const newX = me.x + dx;
-          const newY = me.y + dy;
-          
-          // Check if the new position is walkable
-          if (isWalkable(newX, newY)) {
-            me.x = newX;
-            me.y = newY;
-            socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
-          } else {
-            // Try moving only in one direction if diagonal movement is blocked
-            if (isWalkable(me.x + dx, me.y)) {
-              me.x += dx;
-              socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
-            } else if (isWalkable(me.x, me.y + dy)) {
-              me.y += dy;
-              socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+          if (gameState.currentPOI) {
+            // Interior movement - purely client-side, no server updates
+            const newX = me.x + dx;
+            const newY = me.y + dy;
+            
+            if (isWalkable(newX, newY)) {
+              me.x = newX;
+              me.y = newY;
+            } else {
+              // Try moving only in one direction if diagonal movement is blocked
+              if (isWalkable(me.x + dx, me.y)) {
+                me.x += dx;
+              } else if (isWalkable(me.x, me.y + dy)) {
+                me.y += dy;
+              }
             }
-            // If neither direction works, no movement occurs
+          } else {
+            // Overworld movement - update server position
+            const newX = me.x + dx;
+            const newY = me.y + dy;
+            
+            if (isWalkable(newX, newY)) {
+              me.x = newX;
+              me.y = newY;
+              socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+            } else {
+              // Try moving only in one direction if diagonal movement is blocked
+              if (isWalkable(me.x + dx, me.y)) {
+                me.x += dx;
+                socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+              } else if (isWalkable(me.x, me.y + dy)) {
+                me.y += dy;
+                socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+              }
+            }
           }
         }
         
