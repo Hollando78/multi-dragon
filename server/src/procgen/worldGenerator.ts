@@ -66,25 +66,25 @@ export class WorldGenerator {
     const minDistance = 30;
 
     // First, place a special starter village near spawn point
-    const spawnVillage = this.placeSpawnVillage(terrainData, spawnPoint, poiRng);
+    const spawnVillage = this.placeSpawnVillage(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (spawnVillage) {
       pois.push(spawnVillage);
     }
 
     // Place special Egg Cavern near spawn point
-    const eggCavern = this.placeEggCavern(terrainData, spawnPoint, poiRng);
+    const eggCavern = this.placeEggCavern(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (eggCavern) {
       pois.push(eggCavern);
     }
 
     // Place a Ruined Castle near spawn for early testing
-    const nearbyCastle = this.placeRuinedCastle(terrainData, spawnPoint, poiRng);
+    const nearbyCastle = this.placeRuinedCastle(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (nearbyCastle) {
       pois.push(nearbyCastle);
     }
 
     // Place a Wizard's Tower near spawn for easy testing
-    const nearbyTower = this.placeWizardsTower(terrainData, spawnPoint, poiRng);
+    const nearbyTower = this.placeWizardsTower(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (nearbyTower) {
       pois.push(nearbyTower);
     }
@@ -145,7 +145,7 @@ export class WorldGenerator {
   }
 
   // Try to place a ruined castle within 12-24 tiles of spawn in hilly/mountain biomes
-  private placeRuinedCastle(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
+  private placeRuinedCastle(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG, existing: POI[], minDistance: number): POI | null {
     const size = terrainData.heightMap.length;
     // Keep ruined castles off 'mountain' (unwalkable) to ensure the player can reach them
     const suitableBiomes = ['hills', 'alpine'];
@@ -159,8 +159,9 @@ export class WorldGenerator {
         const height = terrainData.heightMap[y][x];
         if (suitableBiomes.includes(biome) && height > 40) candidates.push({ x, y });
       }
-      if (candidates.length) {
-        const position = rng.randomElement(candidates)!;
+      const spaced = candidates.filter(pos => existing.every(e => distance(pos, e.position) >= minDistance));
+      if (spaced.length) {
+        const position = rng.randomElement(spaced)!;
         return {
           id: rng.generateUUID('ruined-castle-near-spawn'),
           type: POI_TYPES.RUINED_CASTLE,
@@ -175,7 +176,7 @@ export class WorldGenerator {
     return null;
   }
 
-  private placeSpawnVillage(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
+  private placeSpawnVillage(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG, existing: POI[], minDistance: number): POI | null {
     const size = terrainData.heightMap.length;
     const suitableBiomes = ['grassland', 'savanna', 'shrubland', 'forest'];
     
@@ -202,8 +203,9 @@ export class WorldGenerator {
       
       console.log(`[DEBUG] Radius ${radius}: found ${candidates.length} candidates`);
       
-      if (candidates.length > 0) {
-        const position = rng.randomElement(candidates)!;
+      const spaced = candidates.filter(pos => existing.every(e => distance(pos, e.position) >= minDistance));
+      if (spaced.length > 0) {
+        const position = rng.randomElement(spaced)!;
         console.log(`[DEBUG] Placed Haven Village at: ${position.x}, ${position.y} (spawn: ${spawnPoint.x}, ${spawnPoint.y})`);
         return {
           id: rng.generateUUID('spawn-village'),
@@ -221,7 +223,7 @@ export class WorldGenerator {
     return null; // Fallback - couldn't place near spawn
   }
 
-  private placeEggCavern(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
+  private placeEggCavern(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG, existing: POI[], minDistance: number): POI | null {
     const size = terrainData.heightMap.length;
     const suitableBiomes = ['hills', 'mountain', 'taiga', 'forest']; // Cave biomes
     
@@ -248,8 +250,9 @@ export class WorldGenerator {
       
       console.log(`[DEBUG] Radius ${radius}: found ${candidates.length} cave candidates`);
       
-      if (candidates.length > 0) {
-        const position = rng.randomElement(candidates)!;
+      const spaced = candidates.filter(pos => existing.every(e => distance(pos, e.position) >= minDistance));
+      if (spaced.length > 0) {
+        const position = rng.randomElement(spaced)!;
         console.log(`[DEBUG] Placed Egg Cavern at: ${position.x}, ${position.y} (spawn: ${spawnPoint.x}, ${spawnPoint.y})`);
         return {
           id: rng.generateUUID('egg-cavern'),
@@ -268,7 +271,7 @@ export class WorldGenerator {
   }
 
   // Try to place a Wizard's Tower within 10-20 tiles of spawn in walkable biomes
-  private placeWizardsTower(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
+  private placeWizardsTower(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG, existing: POI[], minDistance: number): POI | null {
     const size = terrainData.heightMap.length;
     const suitableBiomes = ['forest', 'hills', 'tundra'];
     for (let radius = 10; radius <= 20; radius++) {
@@ -283,8 +286,9 @@ export class WorldGenerator {
           candidates.push({ x, y });
         }
       }
-      if (candidates.length) {
-        const position = rng.randomElement(candidates)!;
+      const spaced = candidates.filter(pos => existing.every(e => distance(pos, e.position) >= minDistance));
+      if (spaced.length) {
+        const position = rng.randomElement(spaced)!;
         return {
           id: rng.generateUUID('wizards-tower-near-spawn'),
           type: POI_TYPES.WIZARDS_TOWER,
