@@ -91,7 +91,8 @@ export class WorldGenerator {
     }
 
     const poiConfigs = [
-      { type: POI_TYPES.VILLAGE, count: 1, biomes: ['grassland', 'savanna', 'shrubland', 'forest'], priority: 1 },
+      // Increase non-unique villages to make the world feel more populated
+      { type: POI_TYPES.VILLAGE, count: 3, biomes: ['grassland', 'savanna', 'shrubland', 'forest'], priority: 1 },
       // Ruined castles should be reachable; avoid 'mountain' which is unwalkable
       { type: POI_TYPES.RUINED_CASTLE, count: 1, biomes: ['hills', 'alpine'], priority: 2 },
       { type: POI_TYPES.WIZARDS_TOWER, count: 1, biomes: ['forest', 'hills', 'tundra'], priority: 3 },
