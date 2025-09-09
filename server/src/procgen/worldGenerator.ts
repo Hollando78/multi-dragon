@@ -18,6 +18,7 @@ export interface POI {
   discovered: boolean;
   seed: string;
   rarity: Rarity;
+  unique?: boolean;
 }
 
 export interface WorldSnapshot {
@@ -214,7 +215,8 @@ export class WorldGenerator {
           name: 'Haven Village', // Special name for starter village
           discovered: true, // Always discovered
           seed: rng.generateUUID('spawn-village-seed'),
-          rarity: RARITY.COMMON
+          rarity: RARITY.COMMON,
+          unique: true
         };
       }
     }
@@ -261,7 +263,8 @@ export class WorldGenerator {
           name: 'Egg Cavern', // Special name for starter cave
           discovered: true, // Visible so players can find it easily
           seed: rng.generateUUID('egg-cavern-seed'),
-          rarity: RARITY.RARE
+          rarity: RARITY.RARE,
+          unique: true
         };
       }
     }

@@ -27,7 +27,8 @@ export function manifestForSeed(seed: string) {
         position: poi.position,
         name: poi.name,
         discovered: poi.discovered,
-        rarity: poi.rarity
+        rarity: poi.rarity,
+        unique: poi.unique || false
       })),
       rivers: world.rivers
     }
