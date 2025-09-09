@@ -587,6 +587,7 @@ Click "Connect" to join world "alpha"
 
       const POI_COLORS = {
         village: '#ef4444',        // red
+        town: '#14b8a6',           // teal
         ruined_castle: '#6b7280',  // gray
         wizards_tower: '#8b5cf6', // purple
         dark_cave: '#1f2937',     // dark gray
@@ -691,6 +692,27 @@ Click "Connect" to join world "alpha"
             }
           }
           
+          // Draw roads (before POIs for layering)
+          if (worldData.world.roads) {
+            ctx.strokeStyle = '#8b5a2b';
+            ctx.lineWidth = Math.max(1, 2 * camera.zoom);
+            ctx.lineJoin = 'round';
+            for (const road of worldData.world.roads) {
+              if (!road || road.length < 2) continue;
+              ctx.beginPath();
+              for (let i = 0; i < road.length; i++) {
+                const p = road[i];
+                const worldPosX = p.x * baseTileSize;
+                const worldPosY = p.y * baseTileSize;
+                const screenX = cx + (worldPosX - camera.x) * camera.zoom;
+                const screenY = cy + (worldPosY - camera.y) * camera.zoom;
+                if (i === 0) ctx.moveTo(screenX, screenY);
+                else ctx.lineTo(screenX, screenY);
+              }
+              ctx.stroke();
+            }
+          }
+
           // Draw POIs
           if (worldData.world.pois) {
             for (const poi of worldData.world.pois) {
@@ -706,8 +728,8 @@ Click "Connect" to join world "alpha"
                 ctx.fillStyle = POI_COLORS[poi.type] || '#fff';
                 ctx.fillRect(screenX - poiSize/2, screenY - poiSize/2, poiSize, poiSize);
                 
-                // Draw POI name if discovered (scale font with zoom)
-                if (poi.discovered && camera.zoom >= 0.8) {
+                // Draw POI name if discovered (or always for towns) (scale font with zoom)
+                if ((poi.discovered || poi.type === 'town') && camera.zoom >= 0.8) {
                   ctx.fillStyle = '#fff';
                   ctx.font = `${Math.max(8, 8 * camera.zoom)}px sans-serif`;
                   ctx.textAlign = 'center';
@@ -1100,6 +1122,8 @@ Click "Connect" to join world "alpha"
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           } else if (gameState.nearbyPOI.type === 'dragon_grounds') {
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          } else if (gameState.nearbyPOI.type === 'ancient_circle') {
+            ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           }
         } else if (gameState.currentPOI) {
           // Exit prompt
@@ -1307,6 +1331,8 @@ Click "Connect" to join world "alpha"
             enterLighthouse(nearbyPOI);
           } else if (nearbyPOI && nearbyPOI.type === 'dragon_grounds') {
             enterDragonGrounds(nearbyPOI);
+          } else if (nearbyPOI && nearbyPOI.type === 'ancient_circle') {
+            enterAncientCircle(nearbyPOI);
           }
         }
       }
@@ -1418,6 +1444,17 @@ Click "Connect" to join world "alpha"
         } else {
           socket.emit('enter-poi', { poiId: poi.id });
           setTimeout(() => log('[ERROR] Dragon Grounds entry timed out - server may not be responding'), 5000);
+        }
+      }
+
+      function enterAncientCircle(poi) {
+        log('[SYSTEM] Entering ' + poi.name + '...');
+        const cached = gameState.poiInteriors.get(poi.id);
+        if (cached) {
+          transitionToInterior(poi, cached);
+        } else {
+          socket.emit('enter-poi', { poiId: poi.id });
+          setTimeout(() => log('[ERROR] Ancient Circle entry timed out - server may not be responding'), 5000);
         }
       }
 

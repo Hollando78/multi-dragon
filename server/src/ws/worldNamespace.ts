@@ -22,6 +22,7 @@ import { generateRuinedCastle } from '../procgen/ruinedCastleInterior.js';
 import { generateWizardsTower } from '../procgen/wizardsTowerInterior.js';
 import { generateLighthouse } from '../procgen/lighthouseInterior.js';
 import { generateDragonGrounds } from '../procgen/dragonGroundsInterior.js';
+import { generateAncientCircle } from '../procgen/ancientCircleInterior.js';
 import { getRedis } from '../services/redis.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
@@ -323,6 +324,8 @@ export function attachWorldNamespace(io: Namespace) {
             interior = generateLighthouse(poiId, poi.seed, (poi as any).rarity || 'common');
           } else if (poi.type === 'dragon_grounds') {
             interior = generateDragonGrounds(poiId, poi.seed, (poi as any).rarity || 'common');
+          } else if (poi.type === 'ancient_circle') {
+            interior = generateAncientCircle(poiId, poi.seed, (poi as any).rarity || 'common');
           }
           
           if (interior) {
@@ -345,6 +348,27 @@ export function attachWorldNamespace(io: Namespace) {
       } catch (e) {
         logger.error({ poiId, error: (e as Error).message }, 'enter_poi_error');
         socket.emit('poi-entry-error', { error: 'server_error' });
+      }
+    });
+
+    // Enter nested building interior within a POI (e.g., town buildings)
+    socket.on('enter-building', async ({ poiId, buildingId, buildingType }: { poiId: string; buildingId: string; buildingType: string }) => {
+      try {
+        const worldManifest = manifestForSeed(seed);
+        const poi = worldManifest.world.pois.find((p: any) => p.id === poiId);
+        if (!poi) { socket.emit('building-entry-error', { error: 'poi_not_found' }); return; }
+        // Basic rate limit
+        if (!(await wsRateLimit(userId, 'enter-building', 5, 20))) return;
+        let interior = await getPOIState(seed, `${poiId}:building:${buildingId}:interior`);
+        if (!interior) {
+          // Generate based on building type
+          const { generateBuildingInterior } = await import('../procgen/buildingInteriors.js');
+          interior = generateBuildingInterior(poiId, buildingId, poi.seed, buildingType);
+          try { await setPOIState(seed, `${poiId}:building:${buildingId}:interior`, interior); } catch {}
+        }
+        socket.emit('building-interior', { poiId, buildingId, interior });
+      } catch (e) {
+        socket.emit('building-entry-error', { error: 'server_error' });
       }
     });
 
