@@ -83,6 +83,12 @@ export class WorldGenerator {
       pois.push(nearbyCastle);
     }
 
+    // Place a Wizard's Tower near spawn for easy testing
+    const nearbyTower = this.placeWizardsTower(terrainData, spawnPoint, poiRng);
+    if (nearbyTower) {
+      pois.push(nearbyTower);
+    }
+
     const poiConfigs = [
       { type: POI_TYPES.VILLAGE, count: 1, biomes: ['grassland', 'savanna', 'shrubland', 'forest'], priority: 1 },
       // Ruined castles should be reachable; avoid 'mountain' which is unwalkable
@@ -259,6 +265,38 @@ export class WorldGenerator {
     
     console.log(`[DEBUG] Failed to place Egg Cavern - no suitable candidates found near spawn point`);
     return null; // Fallback - couldn't place near spawn
+  }
+
+  // Try to place a Wizard's Tower within 10-20 tiles of spawn in walkable biomes
+  private placeWizardsTower(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
+    const size = terrainData.heightMap.length;
+    const suitableBiomes = ['forest', 'hills', 'tundra'];
+    for (let radius = 10; radius <= 20; radius++) {
+      const candidates: Vector2[] = [];
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
+        const x = Math.floor(spawnPoint.x + Math.cos(angle) * radius);
+        const y = Math.floor(spawnPoint.y + Math.sin(angle) * radius);
+        if (x < 5 || y < 5 || x >= size - 5 || y >= size - 5) continue;
+        const biome = terrainData.biomeMap[y][x];
+        const height = terrainData.heightMap[y][x];
+        if (suitableBiomes.includes(biome) && height > 35 && height < 85) {
+          candidates.push({ x, y });
+        }
+      }
+      if (candidates.length) {
+        const position = rng.randomElement(candidates)!;
+        return {
+          id: rng.generateUUID('wizards-tower-near-spawn'),
+          type: POI_TYPES.WIZARDS_TOWER,
+          position,
+          name: this.generatePOIName(POI_TYPES.WIZARDS_TOWER, rng),
+          discovered: true,
+          seed: rng.generateUUID('wizards-tower-seed'),
+          rarity: this.rollRarity(POI_TYPES.WIZARDS_TOWER, rng)
+        };
+      }
+    }
+    return null;
   }
 
   private generatePOIName(type: POIType, rng: DeterministicRNG): string {
