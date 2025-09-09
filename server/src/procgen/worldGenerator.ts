@@ -63,7 +63,7 @@ export class WorldGenerator {
     const pois: POI[] = [];
     const poiRng = this.rng.getSubRNG('pois');
     const size = terrainData.heightMap.length;
-    const minDistance = 30;
+    const minDistance = 3;
 
     // First, place a special starter village near spawn point
     const spawnVillage = this.placeSpawnVillage(terrainData, spawnPoint, poiRng, pois, minDistance);
