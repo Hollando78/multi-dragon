@@ -33,6 +33,15 @@ export const POI_TYPES = {
 
 export type POIType = typeof POI_TYPES[keyof typeof POI_TYPES];
 
+export const RARITY = {
+  COMMON: 'common',
+  RARE: 'rare',
+  EPIC: 'epic',
+  LEGENDARY: 'legendary',
+} as const;
+
+export type Rarity = typeof RARITY[keyof typeof RARITY];
+
 export interface Vector2 {
   x: number;
   y: number;

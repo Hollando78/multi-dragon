@@ -1,5 +1,6 @@
 import { DeterministicRNG } from './rng.js';
 import type { POIInterior } from './constants.js';
+import type { Rarity } from './constants.js';
 
 type Cell = { type: 'wall' | 'floor' | 'entrance' | 'door'; walkable: boolean; sprite?: string };
 
@@ -8,10 +9,11 @@ type Cell = { type: 'wall' | 'floor' | 'entrance' | 'door'; walkable: boolean; s
 // - Central courtyard with scattered debris (represented as floor)
 // - A few small rooms around the courtyard; some walls broken (missing segments)
 // - A couple of chests in corners; a few guard entities standing watch
-export function generateRuinedCastle(poiId: string, seed: string): POIInterior {
+export function generateRuinedCastle(poiId: string, seed: string, rarity: Rarity = 'common'): POIInterior {
   const rng = new DeterministicRNG(seed);
-  const width = 44;
-  const height = 32;
+  const scale = rarity === 'legendary' ? 1.6 : rarity === 'epic' ? 1.35 : rarity === 'rare' ? 1.15 : 1.0;
+  const width = Math.max(30, Math.round(44 * scale));
+  const height = Math.max(22, Math.round(32 * scale));
 
   // Initialize as floor
   const grid: Cell[][] = Array.from({ length: height }, () =>
@@ -86,7 +88,8 @@ export function generateRuinedCastle(poiId: string, seed: string): POIInterior {
   addRoom(width - innerMargin - 7, height - innerMargin - 6, 6, 5);
 
   // Scatter some debris holes inside the courtyard
-  for (let i = 0; i < 60; i++) {
+  const debrisCount = Math.round(60 * scale);
+  for (let i = 0; i < debrisCount; i++) {
     const x = rng.randomInt(innerMargin + 1, width - innerMargin - 2);
     const y = rng.randomInt(innerMargin + 1, height - innerMargin - 2);
     if (rng.random() < 0.25) grid[y][x] = { type: 'wall', walkable: false };
@@ -97,19 +100,30 @@ export function generateRuinedCastle(poiId: string, seed: string): POIInterior {
   const pushChest = (x: number, y: number) => {
     containers.push({ id: `chest-${x}-${y}`, position: { x, y }, opened: false, items: [] });
   };
-  pushChest(innerMargin + 2, innerMargin + 2);
-  pushChest(width - innerMargin - 3, innerMargin + 2);
-  pushChest(innerMargin + 2, height - innerMargin - 3);
-  pushChest(width - innerMargin - 3, height - innerMargin - 3);
+  const chestPositions = [
+    { x: innerMargin + 2, y: innerMargin + 2 },
+    { x: width - innerMargin - 3, y: innerMargin + 2 },
+    { x: innerMargin + 2, y: height - innerMargin - 3 },
+    { x: width - innerMargin - 3, y: height - innerMargin - 3 },
+  ];
+  const extraChests = rarity === 'legendary' ? 3 : rarity === 'epic' ? 2 : rarity === 'rare' ? 1 : 0;
+  chestPositions.forEach(p => pushChest(p.x, p.y));
+  for (let i = 0; i < extraChests; i++) {
+    pushChest(rng.randomInt(innerMargin + 2, width - innerMargin - 3), rng.randomInt(innerMargin + 2, height - innerMargin - 3));
+  }
 
   // Entities: a few castle guards (re-using existing 'guard' type coloring)
   const entities: POIInterior['entities'] = [];
-  const guardPositions = [
+  const baseGuards = [
     { x: entranceX - 3, y: doorY + 1 },
     { x: entranceX + 3, y: doorY + 1 },
     { x: innerMargin + 3, y: innerMargin + 3 },
     { x: width - innerMargin - 4, y: innerMargin + 3 }
   ];
+  const extraGuards = rarity === 'legendary' ? 4 : rarity === 'epic' ? 3 : rarity === 'rare' ? 2 : 0;
+  const guardPositions = baseGuards.concat(
+    Array.from({ length: extraGuards }, () => ({ x: rng.randomInt(innerMargin + 2, width - innerMargin - 3), y: rng.randomInt(innerMargin + 2, height - innerMargin - 3) }))
+  );
   guardPositions.forEach((p, i) => {
     if (p.x > 1 && p.y > 1 && p.x < width - 1 && p.y < height - 1) {
       if (grid[p.y][p.x].walkable) {
@@ -133,4 +147,3 @@ export function generateRuinedCastle(poiId: string, seed: string): POIInterior {
 
   return interior;
 }
-

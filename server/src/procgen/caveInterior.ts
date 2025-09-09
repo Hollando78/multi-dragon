@@ -1,12 +1,15 @@
 import { DeterministicRNG } from './rng.js';
 import type { POIInterior } from './constants.js';
+import type { Rarity } from './constants.js';
 
 type Cell = { type: 'wall' | 'floor' | 'entrance'; walkable: boolean; sprite?: string };
 
-export function generateDarkCave(poiId: string, seed: string, opts?: { guaranteedEgg?: boolean }): POIInterior {
+export function generateDarkCave(poiId: string, seed: string, opts?: { guaranteedEgg?: boolean; rarity?: Rarity }): POIInterior {
   const rng = new DeterministicRNG(seed);
-  const width = 48;
-  const height = 36;
+  const rarity = opts?.rarity || 'common';
+  const scale = rarity === 'legendary' ? 1.6 : rarity === 'epic' ? 1.35 : rarity === 'rare' ? 1.15 : 1.0;
+  const width = Math.max(32, Math.round(48 * scale));
+  const height = Math.max(24, Math.round(36 * scale));
 
   // Initialize random map
   let grid: Cell[][] = Array.from({ length: height }, () =>
@@ -106,6 +109,7 @@ export function generateDarkCave(poiId: string, seed: string, opts?: { guarantee
   const containers: POIInterior['containers'] = [];
   const entities: POIInterior['entities'] = [];
   let chestCount = 0;
+  const chestCap = rarity === 'legendary' ? 12 : rarity === 'epic' ? 9 : rarity === 'rare' ? 7 : 5;
   for (let y = 2; y < height - 2; y++) {
     for (let x = 2; x < width - 2; x++) {
       if (!grid[y][x].walkable) continue;
@@ -113,7 +117,7 @@ export function generateDarkCave(poiId: string, seed: string, opts?: { guarantee
       for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
         if (grid[y+dy][x+dx].walkable) openNeighbors++;
       }
-      if (openNeighbors === 1 && chestCount < 5 && rng.random() < 0.25) {
+      if (openNeighbors === 1 && chestCount < chestCap && rng.random() < 0.25) {
         containers.push({
           id: `chest-${x}-${y}`,
           position: { x, y },
@@ -127,7 +131,7 @@ export function generateDarkCave(poiId: string, seed: string, opts?: { guarantee
 
   // Place a few bat/slime entities
   const creatureTypes = ['bat', 'slime'];
-  const creatureCount = rng.randomInt(3, 7);
+  const creatureCount = rarity === 'legendary' ? rng.randomInt(8, 14) : rarity === 'epic' ? rng.randomInt(6, 10) : rarity === 'rare' ? rng.randomInt(4, 8) : rng.randomInt(3, 7);
   for (let i = 0; i < creatureCount; i++) {
     let placed = false;
     for (let attempts = 0; attempts < 50 && !placed; attempts++) {

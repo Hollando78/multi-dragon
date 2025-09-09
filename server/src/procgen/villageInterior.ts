@@ -26,10 +26,11 @@ export interface VillageInterior {
   entrance: { x: number; y: number };
 }
 
-export function generateVillageInterior(poiId: string, seed: string): VillageInterior {
+export function generateVillageInterior(poiId: string, seed: string, rarity: 'common' | 'rare' | 'epic' | 'legendary' = 'common'): VillageInterior {
   const rng = new DeterministicRNG(seed);
-  const width = 40;
-  const height = 30;
+  const scale = rarity === 'legendary' ? 1.6 : rarity === 'epic' ? 1.35 : rarity === 'rare' ? 1.15 : 1.0;
+  const width = Math.max(28, Math.round(40 * scale));
+  const height = Math.max(20, Math.round(30 * scale));
 
   // Initialize grass grid
   const layout: Cell[][] = Array.from({ length: height }, () =>
@@ -61,10 +62,12 @@ export function generateVillageInterior(poiId: string, seed: string): VillageInt
   const entities: VillageEntity[] = [];
 
   // Place buildings near roads
+  const baseHouse = 4;
+  const houseCount = rarity === 'legendary' ? baseHouse + 6 : rarity === 'epic' ? baseHouse + 4 : rarity === 'rare' ? baseHouse + 2 : baseHouse;
   const buildingConfigs = [
     { type: 'tavern', count: 1, name: 'The Prancing Pony' },
     { type: 'shop', count: 1, name: 'General Store' },
-    { type: 'house', count: 4, name: 'House' }
+    { type: 'house', count: houseCount, name: 'House' }
   ];
 
   for (const config of buildingConfigs) {

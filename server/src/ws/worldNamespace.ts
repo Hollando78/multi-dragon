@@ -268,15 +268,15 @@ export function attachWorldNamespace(io: Namespace) {
         if (!interior) {
           // Generate new interior
           if (poi.type === 'village') {
-            interior = generateVillageInterior(poiId, poi.seed);
+            interior = generateVillageInterior(poiId, poi.seed, (poi as any).rarity || 'common');
           } else if (poi.type === 'dark_cave') {
             // Generate cave with guaranteed egg for the special "Egg Cavern"
             const guaranteedEgg = poi.name === 'Egg Cavern';
-            interior = generateDarkCave(poiId, poi.seed, { guaranteedEgg });
+            interior = generateDarkCave(poiId, poi.seed, { guaranteedEgg, rarity: (poi as any).rarity || 'common' });
           } else if (poi.type === 'ruined_castle') {
-            interior = generateRuinedCastle(poiId, poi.seed);
+            interior = generateRuinedCastle(poiId, poi.seed, (poi as any).rarity || 'common');
           } else if (poi.type === 'wizards_tower') {
-            interior = generateWizardsTower(poiId, poi.seed);
+            interior = generateWizardsTower(poiId, poi.seed, (poi as any).rarity || 'common');
           }
           
           if (interior) {

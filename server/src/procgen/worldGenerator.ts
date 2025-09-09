@@ -4,6 +4,8 @@ import {
   POI_TYPES, 
   type POIType, 
   type Vector2, 
+  type Rarity,
+  RARITY,
   BIOMES, 
   distance 
 } from './constants.js';
@@ -15,6 +17,7 @@ export interface POI {
   name: string;
   discovered: boolean;
   seed: string;
+  rarity: Rarity;
 }
 
 export interface WorldSnapshot {
@@ -120,7 +123,8 @@ export class WorldGenerator {
                 position,
                 name: this.generatePOIName(config.type, poiRng),
                 discovered: config.type === POI_TYPES.VILLAGE,
-                seed: poiRng.generateUUID(`seed-${config.type}-${i}`)
+                seed: poiRng.generateUUID(`seed-${config.type}-${i}`),
+                rarity: this.rollRarity(config.type, poiRng)
               });
               placed = true;
             }
@@ -157,7 +161,8 @@ export class WorldGenerator {
           position,
           name: this.generatePOIName(POI_TYPES.RUINED_CASTLE, rng),
           discovered: true, // make it visible for easy testing
-          seed: rng.generateUUID('ruined-castle-seed')
+          seed: rng.generateUUID('ruined-castle-seed'),
+          rarity: this.rollRarity(POI_TYPES.RUINED_CASTLE, rng)
         };
       }
     }
@@ -200,7 +205,8 @@ export class WorldGenerator {
           position,
           name: 'Haven Village', // Special name for starter village
           discovered: true, // Always discovered
-          seed: rng.generateUUID('spawn-village-seed')
+          seed: rng.generateUUID('spawn-village-seed'),
+          rarity: RARITY.COMMON
         };
       }
     }
@@ -245,7 +251,8 @@ export class WorldGenerator {
           position,
           name: 'Egg Cavern', // Special name for starter cave
           discovered: true, // Visible so players can find it easily
-          seed: rng.generateUUID('egg-cavern-seed')
+          seed: rng.generateUUID('egg-cavern-seed'),
+          rarity: RARITY.RARE
         };
       }
     }
@@ -266,6 +273,20 @@ export class WorldGenerator {
     };
 
     return rng.randomElement(names[type]) || 'Unknown Place';
+  }
+
+  private rollRarity(type: POIType, rng: DeterministicRNG): Rarity {
+    // Default weights: common 60%, rare 25%, epic 12%, legendary 3%
+    // Slightly favor higher rarity for towers
+    let wCommon = 0.6, wRare = 0.25, wEpic = 0.12, wLegendary = 0.03;
+    if (type === POI_TYPES.WIZARDS_TOWER) {
+      wCommon = 0.5; wRare = 0.3; wEpic = 0.15; wLegendary = 0.05;
+    }
+    const r = rng.random();
+    if (r < wCommon) return RARITY.COMMON;
+    if (r < wCommon + wRare) return RARITY.RARE;
+    if (r < wCommon + wRare + wEpic) return RARITY.EPIC;
+    return RARITY.LEGENDARY;
   }
 
   private findLandSpawnPoint(terrainData: TerrainData): Vector2 {

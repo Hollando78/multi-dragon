@@ -1,5 +1,6 @@
 import { DeterministicRNG } from './rng.js';
 import type { POIInterior } from './constants.js';
+import type { Rarity } from './constants.js';
 
 type CellType = 'wall' | 'floor' | 'entrance' | 'door' | 'stairs_up' | 'stairs_down';
 type Cell = { type: CellType; walkable: boolean; sprite?: string };
@@ -14,11 +15,12 @@ interface TowerFloor {
 }
 
 // Generate a multi-floor Wizard's Tower interior. Floors are stacked; stairs connect between them.
-export function generateWizardsTower(poiId: string, seed: string): POIInterior {
+export function generateWizardsTower(poiId: string, seed: string, rarity: Rarity = 'common'): POIInterior {
   const rng = new DeterministicRNG(seed);
-  const floorsCount = rng.randomInt(3, 6); // 3-5 floors
-  const width = 26; // compact
-  const height = 26;
+  const floorsCount = rarity === 'legendary' ? 6 : rarity === 'epic' ? 5 : rarity === 'rare' ? 4 : 3;
+  const scale = rarity === 'legendary' ? 1.4 : rarity === 'epic' ? 1.25 : rarity === 'rare' ? 1.1 : 1.0;
+  const width = Math.max(20, Math.round(26 * scale)); // compact
+  const height = Math.max(20, Math.round(26 * scale));
 
   const floors: TowerFloor[] = [];
 
@@ -67,17 +69,27 @@ export function generateWizardsTower(poiId: string, seed: string): POIInterior {
       }
     }
 
-    // Entities: add a scholar/adept on middle floors, wizard on top
+    // Entities: more powerful/abundant with rarity
     const entities: TowerFloor['entities'] = [];
+    const extraAdept = rarity === 'legendary' ? 2 : rarity === 'epic' ? 1 : 0;
     if (level === floorsCount - 1) {
       entities.push({ id: `wizard-${level}`, type: 'guard', position: { x: cx, y: cy - 1 }, state: { title: 'Archmage' } });
+      for (let i = 0; i < extraAdept; i++) {
+        entities.push({ id: `adept-top-${i}`, type: 'villager', position: { x: cx + i - 1, y: cy + 1 }, state: { role: 'adept' } });
+      }
     } else if (level > 0) {
       entities.push({ id: `adept-${level}`, type: 'villager', position: { x: cx - 1, y: cy + 1 }, state: { role: 'adept' } });
+      if (extraAdept > 0 && rng.random() < 0.5) {
+        entities.push({ id: `adept2-${level}`, type: 'villager', position: { x: cx + 1, y: cy }, state: { role: 'adept' } });
+      }
     }
 
     // Containers: a chest near a wall
     const containers: TowerFloor['containers'] = [];
     containers.push({ id: `chest-${level}`, position: { x: cx - 3, y: cy + 3 }, opened: false, items: [] });
+    if (rarity === 'legendary' && level === floorsCount - 1) {
+      containers.push({ id: `vault-${level}`, position: { x: cx + 3, y: cy - 3 }, opened: false, items: [] });
+    }
 
     return { layout: grid, entities, containers, entrance, stairsUp, stairsDown };
   };
@@ -102,4 +114,3 @@ export function generateWizardsTower(poiId: string, seed: string): POIInterior {
 
   return interior as POIInterior;
 }
-

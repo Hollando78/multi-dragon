@@ -26,7 +26,8 @@ export function manifestForSeed(seed: string) {
         type: poi.type,
         position: poi.position,
         name: poi.name,
-        discovered: poi.discovered
+        discovered: poi.discovered,
+        rarity: poi.rarity
       })),
       rivers: world.rivers
     }
@@ -36,4 +37,3 @@ export function manifestForSeed(seed: string) {
   worldCache.set(seed, manifest);
   return manifest;
 }
-
