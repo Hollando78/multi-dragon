@@ -526,25 +526,132 @@ Click "Connect" to join world "alpha"
       };
 
       
-      // Biome colors for rendering
-      const BIOME_COLORS = {
-        ocean: '#1e40af',     // deep blue
-        beach: '#fbbf24',     // sandy yellow
-        coast: '#22d3ee',     // light blue
-        grassland: '#65a30d', // green
-        forest: '#166534',    // dark green
-        savanna: '#a3a3a3',   // light brown
-        shrubland: '#84cc16', // yellow-green
-        hills: '#a16207',     // brown
-        mountain: '#6b7280',  // gray
-        alpine: '#e5e7eb',    // light gray
-        taiga: '#14532d',     // dark green
-        tundra: '#d1d5db',    // light gray
-        desert: '#fbbf24'     // yellow
+      // Enhanced biome system with metadata and color variance
+      const BIOME_DATA = {
+        ocean: {
+          name: 'Ocean',
+          baseColor: '#1e40af', // deep blue
+          colorVariance: 0.15,
+          walkable: false
+        },
+        beach: {
+          name: 'Beach',
+          baseColor: '#fbbf24', // sandy yellow
+          colorVariance: 0.25,
+          walkable: true
+        },
+        coast: {
+          name: 'Coastal Plains',
+          baseColor: '#84cc16', // coastal green (fixed from incorrect blue!)
+          colorVariance: 0.3,
+          walkable: true
+        },
+        grassland: {
+          name: 'Grassland',
+          baseColor: '#65a30d', // grass green
+          colorVariance: 0.4,
+          walkable: true
+        },
+        forest: {
+          name: 'Forest',
+          baseColor: '#166534', // forest green
+          colorVariance: 0.35,
+          walkable: true
+        },
+        savanna: {
+          name: 'Savanna',
+          baseColor: '#d97706', // warm brown (fixed from gray!)
+          colorVariance: 0.4,
+          walkable: true
+        },
+        shrubland: {
+          name: 'Shrubland',
+          baseColor: '#a3a65a', // olive green
+          colorVariance: 0.3,
+          walkable: true
+        },
+        hills: {
+          name: 'Hills',
+          baseColor: '#a16207', // brown
+          colorVariance: 0.25,
+          walkable: true
+        },
+        mountain: {
+          name: 'Mountain',
+          baseColor: '#6b7280', // gray
+          colorVariance: 0.2,
+          walkable: false
+        },
+        alpine: {
+          name: 'Alpine',
+          baseColor: '#e5e7eb', // light gray
+          colorVariance: 0.15,
+          walkable: true
+        },
+        taiga: {
+          name: 'Taiga',
+          baseColor: '#14532d', // dark green
+          colorVariance: 0.3,
+          walkable: true
+        },
+        tundra: {
+          name: 'Tundra',
+          baseColor: '#d1d5db', // light gray
+          colorVariance: 0.2,
+          walkable: true
+        },
+        desert: {
+          name: 'Desert',
+          baseColor: '#f59e0b', // desert orange (fixed from yellow like beach!)
+          colorVariance: 0.35,
+          walkable: true
+        }
       };
+
+      // Function to generate biome color with natural variance
+      function getBiomeColor(biome, x, y) {
+        const data = BIOME_DATA[biome];
+        if (!data) return '#808080'; // fallback gray
+        
+        const baseColor = data.baseColor;
+        const variance = data.colorVariance;
+        
+        if (variance === 0) return baseColor;
+        
+        // Use position-based deterministic variance for consistent appearance
+        const hash = ((x * 73856093) ^ (y * 19349663)) % 1000000;
+        const factor1 = (hash % 1000) / 1000;
+        const factor2 = ((hash / 1000) % 1000) / 1000;
+        
+        // Parse hex color
+        const hex = baseColor.slice(1);
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        
+        // Apply variance
+        const varyAmount = variance * 60; // max variance in RGB units
+        const dr = Math.floor((factor1 - 0.5) * varyAmount);
+        const dg = Math.floor((factor2 - 0.5) * varyAmount);
+        const db = Math.floor(((factor1 + factor2) / 2 - 0.5) * varyAmount);
+        
+        // Clamp to valid range
+        const newR = Math.max(0, Math.min(255, r + dr));
+        const newG = Math.max(0, Math.min(255, g + dg));
+        const newB = Math.max(0, Math.min(255, b + db));
+        
+        return `rgb(${newR}, ${newG}, ${newB})`;
+      }
+
+      // Legacy color mapping for backward compatibility
+      const BIOME_COLORS = Object.fromEntries(
+        Object.entries(BIOME_DATA).map(([biome, data]) => [biome, data.baseColor])
+      );
       
-      // Unwalkable biomes
-      const UNWALKABLE_BIOMES = new Set(['ocean', 'mountain']);
+      // Unwalkable biomes (derived from metadata)
+      const UNWALKABLE_BIOMES = new Set(
+        Object.entries(BIOME_DATA).filter(([_, data]) => !data.walkable).map(([biome, _]) => biome)
+      );
       
       // Check if a position is walkable (coordinates already in correct space)
       function isWalkable(x, y) {
@@ -680,13 +787,14 @@ Click "Connect" to join world "alpha"
           for (let worldY = startY; worldY < endY; worldY++) {
             for (let worldX = startX; worldX < endX; worldX++) {
               const biome = biomeMap[worldY] && biomeMap[worldY][worldX];
-              if (biome && BIOME_COLORS[biome]) {
+              if (biome && BIOME_DATA[biome]) {
                 const worldPosX = worldX * baseTileSize;
                 const worldPosY = worldY * baseTileSize;
                 const screenX = cx + (worldPosX - camera.x) * camera.zoom;
                 const screenY = cy + (worldPosY - camera.y) * camera.zoom;
                 
-                ctx.fillStyle = BIOME_COLORS[biome];
+                // Use enhanced biome color with variance
+                ctx.fillStyle = getBiomeColor(biome, worldX, worldY);
                 ctx.fillRect(screenX, screenY, tileSize, tileSize);
               }
             }
@@ -1114,33 +1222,36 @@ Click "Connect" to join world "alpha"
         ctx.fillText(`Camera: ${Math.round(camera.x)}, ${Math.round(camera.y)}`, 10, 35);
         ctx.fillText(`Zoom: ${camera.zoom.toFixed(1)}x`, 10, 50);
         
+        // Show current biome
+        if (worldData && worldData.world && worldData.world.biomeMap) {
+          const biomeMap = worldData.world.biomeMap;
+          const worldTileX = Math.floor(me.x / 8);
+          const worldTileY = Math.floor(me.y / 8);
+          if (biomeMap[worldTileY] && biomeMap[worldTileY][worldTileX]) {
+            const biome = biomeMap[worldTileY][worldTileX];
+            const biomeInfo = BIOME_DATA[biome];
+            const biomeName = biomeInfo ? biomeInfo.name : biome;
+            ctx.fillText(`Biome: ${biomeName}`, 10, 65);
+          }
+        }
+        
         if (gameState.currentPOI) {
           const currentInterior = gameState.poiInteriors.get(gameState.currentPOI);
           if (currentInterior) {
             if (currentInterior.type === 'dark_cave') {
-              ctx.fillText(`Location: Cave Interior`, 10, 65);
+              ctx.fillText(`Location: Cave Interior`, 10, 80);
             } else if (currentInterior.type === 'ruined_castle') {
-              ctx.fillText(`Location: Ruined Castle Interior`, 10, 65);
+              ctx.fillText(`Location: Ruined Castle Interior`, 10, 80);
             } else if (currentInterior.type === 'wizards_tower') {
-              ctx.fillText(`Location: Wizard's Tower`, 10, 65);
+              ctx.fillText(`Location: Wizard's Tower`, 10, 80);
             } else if (currentInterior.type === 'lighthouse') {
-              ctx.fillText(`Location: Lighthouse`, 10, 65);
+              ctx.fillText(`Location: Lighthouse`, 10, 80);
             } else if (currentInterior.type === 'village') {
-              ctx.fillText(`Location: Village Interior`, 10, 65);
+              ctx.fillText(`Location: Village Interior`, 10, 80);
             } else if (currentInterior.type === 'town') {
-              ctx.fillText(`Location: Town Interior`, 10, 65);
+              ctx.fillText(`Location: Town Interior`, 10, 80);
             } else {
-              ctx.fillText(`Location: Interior`, 10, 65);
-            }
-          }
-        } else {
-          // Show current biome if available
-          if (worldData && worldData.world.biomeMap) {
-            const tileX = Math.floor(me.x / 8);
-            const tileY = Math.floor(me.y / 8);
-            const biome = worldData.world.biomeMap[tileY] && worldData.world.biomeMap[tileY][tileX];
-            if (biome) {
-              ctx.fillText(`Biome: ${biome}`, 10, 65);
+              ctx.fillText(`Location: Interior`, 10, 80);
             }
           }
         }
@@ -1221,8 +1332,9 @@ Click "Connect" to join world "alpha"
         for (let y = 0; y < worldSize; y += step) {
           for (let x = 0; x < worldSize; x += step) {
             const biome = biomeMap[y] && biomeMap[y][x];
-            if (biome && BIOME_COLORS[biome]) {
-              minimapCtx.fillStyle = BIOME_COLORS[biome];
+            if (biome && BIOME_DATA[biome]) {
+              // Use base color for minimap (less variance for cleaner overview)
+              minimapCtx.fillStyle = BIOME_DATA[biome].baseColor;
               const pixelX = offsetX + x * scale;
               const pixelY = offsetY + y * scale;
               const pixelSize = Math.max(1, scale * step);
@@ -1818,7 +1930,7 @@ Click "Connect" to join world "alpha"
         // Load world data first
         try {
           log('[SYSTEM] Loading world data...');
-          const response = await fetch(`/worlds/${encodeURIComponent(seed)}/manifest`);
+          const response = await fetch(`/worlds/${encodeURIComponent(seed)}/manifest?compact=1`);
           worldData = await response.json();
           log(`[SYSTEM] Loaded world: ${worldData.world.size}x${worldData.world.size}`);
         } catch (error) {
