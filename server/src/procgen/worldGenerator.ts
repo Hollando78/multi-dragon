@@ -225,12 +225,13 @@ export class WorldGenerator {
 
   private placeEggCavern(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG, existing: POI[], minDistance: number): POI | null {
     const size = terrainData.heightMap.length;
-    const suitableBiomes = ['hills', 'mountain', 'taiga', 'forest']; // Cave biomes
+    // Avoid 'mountain' near spawn to keep accessible
+    const suitableBiomes = ['hills', 'taiga', 'forest'];
     
     console.log(`[DEBUG] Attempting to place Egg Cavern near spawn point: ${spawnPoint.x}, ${spawnPoint.y}`);
     
     // Try to place cavern within 10-20 tiles of spawn point (further than village)
-    for (let radius = 10; radius <= 20; radius++) {
+    for (let radius = 10; radius <= 30; radius++) {
       const candidates: Vector2[] = [];
       
       // Search in a ring around spawn point
@@ -249,7 +250,6 @@ export class WorldGenerator {
       }
       
       console.log(`[DEBUG] Radius ${radius}: found ${candidates.length} cave candidates`);
-      
       const spaced = candidates.filter(pos => existing.every(e => distance(pos, e.position) >= minDistance));
       if (spaced.length > 0) {
         const position = rng.randomElement(spaced)!;
@@ -265,9 +265,37 @@ export class WorldGenerator {
         };
       }
     }
-    
+    // Relax spacing slightly and extend search
+    const relaxed = Math.max(16, minDistance - 10);
+    for (let radius = 12; radius <= 36; radius++) {
+      const candidates: Vector2[] = [];
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
+        const x = Math.floor(spawnPoint.x + Math.cos(angle) * radius);
+        const y = Math.floor(spawnPoint.y + Math.sin(angle) * radius);
+        if (x >= 5 && x < size - 5 && y >= 5 && y < size - 5) {
+          const biome = terrainData.biomeMap[y][x];
+          const height = terrainData.heightMap[y][x];
+          if (suitableBiomes.includes(biome) && height > 40 && height < 90) {
+            candidates.push({ x, y });
+          }
+        }
+      }
+      const spaced = candidates.filter(pos => existing.every(e => distance(pos, e.position) >= relaxed));
+      if (spaced.length > 0) {
+        const position = rng.randomElement(spaced)!;
+        return {
+          id: rng.generateUUID('egg-cavern'),
+          type: POI_TYPES.DARK_CAVE,
+          position,
+          name: 'Egg Cavern',
+          discovered: true,
+          seed: rng.generateUUID('egg-cavern-seed'),
+          rarity: RARITY.RARE
+        };
+      }
+    }
     console.log(`[DEBUG] Failed to place Egg Cavern - no suitable candidates found near spawn point`);
-    return null; // Fallback - couldn't place near spawn
+    return null;
   }
 
   // Try to place a Wizard's Tower within 10-20 tiles of spawn in walkable biomes
