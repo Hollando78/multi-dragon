@@ -833,9 +833,33 @@ Click "Connect" to join world "alpha"
             const screenY = cy + (entity.position.y * 16 - camera.y) * camera.zoom;
             const entitySize = 12 * camera.zoom;
             
-            // Draw NPC
+            // Draw entity based on type
             ctx.fillStyle = getEntityColor(entity.type);
-            ctx.fillRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
+            if (entity.type === 'dragon_egg') {
+              // Draw egg shape (ellipse)
+              const eggWidth = entitySize * 0.8;
+              const eggHeight = entitySize * 1.2;
+              ctx.beginPath();
+              ctx.ellipse(screenX, screenY, eggWidth/2, eggHeight/2, 0, 0, 2 * Math.PI);
+              ctx.fill();
+              // Add border for egg
+              ctx.strokeStyle = '#b45309';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            } else if (entity.type === 'bat') {
+              // Draw small circle for bat
+              ctx.beginPath();
+              ctx.arc(screenX, screenY, entitySize * 0.3, 0, 2 * Math.PI);
+              ctx.fill();
+            } else if (entity.type === 'slime') {
+              // Draw circle for slime
+              ctx.beginPath();
+              ctx.arc(screenX, screenY, entitySize * 0.4, 0, 2 * Math.PI);
+              ctx.fill();
+            } else {
+              // Draw regular NPC (rectangle)
+              ctx.fillRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
+            }
             
             // Draw name if zoomed in
             if (camera.zoom >= 0.8) {
@@ -872,7 +896,10 @@ Click "Connect" to join world "alpha"
         const colors = {
           villager: '#10b981',   // green
           merchant: '#f59e0b',   // orange
-          guard: '#dc2626'       // red
+          guard: '#dc2626',      // red
+          dragon_egg: '#f59e0b', // golden egg
+          bat: '#6b7280',        // gray bat
+          slime: '#22c55e'       // green slime
         };
         return colors[entityType] || '#6b7280';
       }
@@ -887,7 +914,12 @@ Click "Connect" to join world "alpha"
         ctx.fillText(`Zoom: ${camera.zoom.toFixed(1)}x`, 10, 50);
         
         if (gameState.currentPOI) {
-          ctx.fillText(`Location: Village Interior`, 10, 65);
+          const currentInterior = gameState.poiInteriors.get(gameState.currentPOI);
+          if (currentInterior && currentInterior.type === 'dark_cave') {
+            ctx.fillText(`Location: Cave Interior`, 10, 65);
+          } else {
+            ctx.fillText(`Location: Village Interior`, 10, 65);
+          }
         } else {
           // Show current biome if available
           if (worldData && worldData.world.biomeMap) {
@@ -902,16 +934,35 @@ Click "Connect" to join world "alpha"
         
         // Show interaction prompts
         gameState.nearbyPOI = findNearbyPOI();
-        if (gameState.nearbyPOI && gameState.nearbyPOI.type === 'village' && !gameState.currentPOI) {
+        const nearbyEgg = findNearbyEgg();
+        
+        if (nearbyEgg) {
+          // Dragon egg prompt (highest priority)
           ctx.fillStyle = '#ffff00';
           ctx.font = '14px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          ctx.fillText('Press SPACE to pick up Dragon Egg', canvas.width / 2, canvas.height - 80);
+        } else if (gameState.nearbyPOI && !gameState.currentPOI) {
+          // POI entry prompts
+          ctx.fillStyle = '#ffff00';
+          ctx.font = '14px sans-serif';
+          ctx.textAlign = 'center';
+          if (gameState.nearbyPOI.type === 'village') {
+            ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          } else if (gameState.nearbyPOI.type === 'dark_cave') {
+            ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          }
         } else if (gameState.currentPOI) {
+          // Exit prompt
           ctx.fillStyle = '#ffff00';
           ctx.font = '14px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('Press SPACE to exit village', canvas.width / 2, canvas.height - 80);
+          const currentInterior = gameState.poiInteriors.get(gameState.currentPOI);
+          if (currentInterior && currentInterior.type === 'dark_cave') {
+            ctx.fillText('Press SPACE to exit cave', canvas.width / 2, canvas.height - 80);
+          } else {
+            ctx.fillText('Press SPACE to exit village', canvas.width / 2, canvas.height - 80);
+          }
         }
       }
       
@@ -1050,13 +1101,21 @@ Click "Connect" to join world "alpha"
       
       function handlePOIInteraction() {
         if (gameState.currentPOI) {
-          // We're inside a POI - exit to overworld
-          exitPOI();
+          // Check if we're near a dragon egg and can collect it
+          const nearbyEgg = findNearbyEgg();
+          if (nearbyEgg) {
+            collectEgg(nearbyEgg);
+          } else {
+            // Exit to overworld
+            exitPOI();
+          }
         } else {
           // We're in overworld - try to enter nearby POI
           const nearbyPOI = findNearbyPOI();
           if (nearbyPOI && nearbyPOI.type === 'village') {
             enterVillage(nearbyPOI);
+          } else if (nearbyPOI && nearbyPOI.type === 'dark_cave') {
+            enterCave(nearbyPOI);
           }
         }
       }
@@ -1083,6 +1142,66 @@ Click "Connect" to join world "alpha"
             log('[ERROR] Village entry timed out - server may not be responding');
           }, 5000);
         }
+      }
+      
+      function enterCave(poi) {
+        log('[SYSTEM] Entering ' + poi.name + '...');
+        console.log('Entering cave:', poi.id, 'Socket connected:', !!socket);
+        
+        // Check if we have cached interior
+        const cached = gameState.poiInteriors.get(poi.id);
+        if (cached) {
+          // Use cached interior
+          console.log('Using cached cave interior');
+          transitionToInterior(poi, cached);
+        } else {
+          // Request interior generation from server
+          console.log('Requesting cave interior from server for POI:', poi.id);
+          socket.emit('enter-poi', { poiId: poi.id });
+          
+          // Add timeout to detect if server doesn't respond
+          setTimeout(() => {
+            console.log('No response from server after 5 seconds');
+            log('[ERROR] Cave entry timed out - server may not be responding');
+          }, 5000);
+        }
+      }
+      
+      function findNearbyEgg() {
+        if (!gameState.currentPOI) return null;
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (!interior || !interior.entities) return null;
+        
+        // Find dragon eggs within 1.5 tiles of player
+        const playerTileX = Math.floor(me.x / 16);
+        const playerTileY = Math.floor(me.y / 16);
+        
+        for (const entity of interior.entities) {
+          if (entity.type === 'dragon_egg') {
+            const dx = Math.abs(entity.position.x - playerTileX);
+            const dy = Math.abs(entity.position.y - playerTileY);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance <= 1.5) {
+              return entity;
+            }
+          }
+        }
+        return null;
+      }
+      
+      function collectEgg(egg) {
+        log('[SYSTEM] Picking up Dragon Egg!');
+        console.log('Collecting egg:', egg.id);
+        
+        // Remove egg from interior locally (optimistic update)
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (interior) {
+          interior.entities = interior.entities.filter(e => e.id !== egg.id);
+        }
+        
+        // TODO: Send egg collection to server for persistence and inventory
+        // socket.emit('collect-egg', { eggId: egg.id, poiId: gameState.currentPOI });
       }
       
       function exitPOI() {
@@ -1141,10 +1260,12 @@ Click "Connect" to join world "alpha"
         last = t;
         
         let dx = 0, dy = 0;
-        if (keys.has('arrowup') || keys.has('w')) dy -= speed * dt;
-        if (keys.has('arrowdown') || keys.has('s')) dy += speed * dt;
-        if (keys.has('arrowleft') || keys.has('a')) dx -= speed * dt;
-        if (keys.has('arrowright') || keys.has('d')) dx += speed * dt;
+        // Reduce speed in village interiors to account for larger tile size
+        const currentSpeed = gameState.currentPOI ? speed * 0.6 : speed;
+        if (keys.has('arrowup') || keys.has('w')) dy -= currentSpeed * dt;
+        if (keys.has('arrowdown') || keys.has('s')) dy += currentSpeed * dt;
+        if (keys.has('arrowleft') || keys.has('a')) dx -= currentSpeed * dt;
+        if (keys.has('arrowright') || keys.has('d')) dx += currentSpeed * dt;
         
         if ((dx || dy) && socket) {
           // Calculate new position

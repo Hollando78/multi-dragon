@@ -16,6 +16,7 @@ import { wsEvents, wsConnections } from '../metrics.js';
 import { validateMovement } from '../utils/collision.js';
 import { wsRateLimit } from '../services/rateLimit.js';
 import { generateVillageInterior } from '../procgen/villageInterior.js';
+import { generateDarkCave } from '../procgen/caveInterior.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
 
@@ -266,6 +267,13 @@ export function attachWorldNamespace(io: Namespace) {
           // Generate new interior
           if (poi.type === 'village') {
             interior = generateVillageInterior(poiId, poi.seed);
+          } else if (poi.type === 'dark_cave') {
+            // Generate cave with guaranteed egg for the special "Egg Cavern"
+            const guaranteedEgg = poi.name === 'Egg Cavern';
+            interior = generateDarkCave(poiId, poi.seed, { guaranteedEgg });
+          }
+          
+          if (interior) {
             // Try to cache the generated interior (fallback if Redis fails)
             try {
               await setPOIState(seed, `${poiId}:interior`, interior);

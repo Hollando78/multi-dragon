@@ -68,6 +68,12 @@ export class WorldGenerator {
       pois.push(spawnVillage);
     }
 
+    // Place special Egg Cavern near spawn point
+    const eggCavern = this.placeEggCavern(terrainData, spawnPoint, poiRng);
+    if (eggCavern) {
+      pois.push(eggCavern);
+    }
+
     const poiConfigs = [
       { type: POI_TYPES.VILLAGE, count: 1, biomes: ['grassland', 'savanna', 'shrubland', 'forest'], priority: 1 },
       { type: POI_TYPES.RUINED_CASTLE, count: 1, biomes: ['hills', 'mountain', 'alpine'], priority: 2 },
@@ -163,6 +169,51 @@ export class WorldGenerator {
     }
     
     console.log(`[DEBUG] Failed to place spawn village - no suitable candidates found near spawn point`);
+    return null; // Fallback - couldn't place near spawn
+  }
+
+  private placeEggCavern(terrainData: TerrainData, spawnPoint: Vector2, rng: DeterministicRNG): POI | null {
+    const size = terrainData.heightMap.length;
+    const suitableBiomes = ['hills', 'mountain', 'taiga', 'forest']; // Cave biomes
+    
+    console.log(`[DEBUG] Attempting to place Egg Cavern near spawn point: ${spawnPoint.x}, ${spawnPoint.y}`);
+    
+    // Try to place cavern within 10-20 tiles of spawn point (further than village)
+    for (let radius = 10; radius <= 20; radius++) {
+      const candidates: Vector2[] = [];
+      
+      // Search in a ring around spawn point
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 12) {
+        const x = Math.floor(spawnPoint.x + Math.cos(angle) * radius);
+        const y = Math.floor(spawnPoint.y + Math.sin(angle) * radius);
+        
+        if (x >= 5 && x < size - 5 && y >= 5 && y < size - 5) {
+          const biome = terrainData.biomeMap[y][x];
+          const height = terrainData.heightMap[y][x];
+          
+          if (suitableBiomes.includes(biome) && height > 40 && height < 90) {
+            candidates.push({ x, y });
+          }
+        }
+      }
+      
+      console.log(`[DEBUG] Radius ${radius}: found ${candidates.length} cave candidates`);
+      
+      if (candidates.length > 0) {
+        const position = rng.randomElement(candidates)!;
+        console.log(`[DEBUG] Placed Egg Cavern at: ${position.x}, ${position.y} (spawn: ${spawnPoint.x}, ${spawnPoint.y})`);
+        return {
+          id: rng.generateUUID('egg-cavern'),
+          type: POI_TYPES.DARK_CAVE,
+          position,
+          name: 'Egg Cavern', // Special name for starter cave
+          discovered: false, // Hidden until found
+          seed: rng.generateUUID('egg-cavern-seed')
+        };
+      }
+    }
+    
+    console.log(`[DEBUG] Failed to place Egg Cavern - no suitable candidates found near spawn point`);
     return null; // Fallback - couldn't place near spawn
   }
 

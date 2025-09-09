@@ -52,3 +52,24 @@ export function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
 }
+
+export interface POIInterior {
+  id: string;
+  type: POIType;
+  seed: string;
+  generatedAt: string;
+  layout: Array<Array<{ type: string; walkable: boolean; sprite?: string }>>;
+  entities: Array<{
+    id: string;
+    type: string;
+    position: Vector2;
+    state: any;
+  }>;
+  containers: Array<{
+    id: string;
+    position: Vector2;
+    opened: boolean;
+    items: any[];
+  }>;
+  cleared: boolean;
+}
