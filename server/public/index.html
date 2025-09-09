@@ -608,6 +608,19 @@ Click "Connect" to join world "alpha"
         }
       };
 
+      // Simple noise function for smooth color variance
+      function simpleNoise(x, y, scale = 0.1) {
+        // Multiple octaves of noise for more natural variation
+        const octave1 = Math.sin(x * scale * 2.1) * Math.cos(y * scale * 1.7);
+        const octave2 = Math.sin(x * scale * 4.3) * Math.cos(y * scale * 3.9) * 0.5;
+        const octave3 = Math.sin(x * scale * 8.7) * Math.cos(y * scale * 7.1) * 0.25;
+        
+        return (octave1 + octave2 + octave3) / 1.75; // normalize roughly to [-1, 1]
+      }
+
+      // Global setting for color variance (can be toggled for debugging)
+      const ENABLE_COLOR_VARIANCE = true;
+
       // Function to generate biome color with natural variance
       function getBiomeColor(biome, x, y) {
         const data = BIOME_DATA[biome];
@@ -616,12 +629,17 @@ Click "Connect" to join world "alpha"
         const baseColor = data.baseColor;
         const variance = data.colorVariance;
         
-        if (variance === 0) return baseColor;
+        if (variance === 0 || !ENABLE_COLOR_VARIANCE) return baseColor;
         
-        // Use position-based deterministic variance for consistent appearance
-        const hash = ((x * 73856093) ^ (y * 19349663)) % 1000000;
-        const factor1 = (hash % 1000) / 1000;
-        const factor2 = ((hash / 1000) % 1000) / 1000;
+        // Use smooth noise-based variance at multiple scales
+        const largeScale = simpleNoise(x, y, 0.05);  // Large regions
+        const mediumScale = simpleNoise(x, y, 0.15); // Medium detail
+        const smallScale = simpleNoise(x, y, 0.3);   // Fine detail
+        
+        // Combine scales with different weights
+        const noiseR = (largeScale * 0.5 + mediumScale * 0.3 + smallScale * 0.2);
+        const noiseG = (simpleNoise(x + 100, y, 0.08) * 0.5 + simpleNoise(x + 100, y, 0.2) * 0.3 + simpleNoise(x + 100, y, 0.35) * 0.2);
+        const noiseB = (simpleNoise(x, y + 100, 0.06) * 0.5 + simpleNoise(x, y + 100, 0.18) * 0.3 + simpleNoise(x, y + 100, 0.32) * 0.2);
         
         // Parse hex color
         const hex = baseColor.slice(1);
@@ -629,11 +647,11 @@ Click "Connect" to join world "alpha"
         const g = parseInt(hex.substr(2, 2), 16);
         const b = parseInt(hex.substr(4, 2), 16);
         
-        // Apply variance
-        const varyAmount = variance * 60; // max variance in RGB units
-        const dr = Math.floor((factor1 - 0.5) * varyAmount);
-        const dg = Math.floor((factor2 - 0.5) * varyAmount);
-        const db = Math.floor(((factor1 + factor2) / 2 - 0.5) * varyAmount);
+        // Apply variance with reduced intensity to avoid checkerboard
+        const varyAmount = variance * 35; // Reduced from 60 to 35
+        const dr = Math.floor(noiseR * varyAmount);
+        const dg = Math.floor(noiseG * varyAmount);
+        const db = Math.floor(noiseB * varyAmount);
         
         // Clamp to valid range
         const newR = Math.max(0, Math.min(255, r + dr));
