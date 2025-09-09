@@ -640,7 +640,11 @@ Click "Connect" to join world "alpha"
         
         // Choose rendering mode based on game state
         if (gameState.currentPOI) {
-          drawPOIInterior(cx, cy);
+          if (gameState.currentBuilding) {
+            drawBuildingInterior(cx, cy);
+          } else {
+            drawPOIInterior(cx, cy);
+          }
         } else {
           drawOverworld(cx, cy);
         }
@@ -895,6 +899,58 @@ Click "Connect" to join world "alpha"
         ctx.fillStyle = '#4a90e2'; // Blue player
         ctx.fillRect(cx - playerSize/2, cy - playerSize/2, playerSize, playerSize);
       }
+
+      function drawBuildingInterior(cx, cy) {
+        const bId = gameState.currentBuilding;
+        if (!bId) return;
+        const interior = gameState.buildingInteriors.get(bId);
+        if (!interior) return;
+        const tileSize = 16 * camera.zoom;
+        const viewWidth = cx / camera.zoom;
+        const viewHeight = cy / camera.zoom;
+        const interiorWidth = interior.width || (interior.layout && interior.layout[0] ? interior.layout[0].length : 0);
+        const interiorHeight = interior.height || (interior.layout ? interior.layout.length : 0);
+        const startX = Math.max(0, Math.floor(camera.x - viewWidth / 16));
+        const endX = Math.min(interiorWidth - 1, Math.ceil(camera.x + viewWidth / 16));
+        const startY = Math.max(0, Math.floor(camera.y - viewHeight / 16));
+        const endY = Math.min(interiorHeight - 1, Math.ceil(camera.y + viewHeight / 16));
+        for (let y = startY; y <= endY; y++) {
+          for (let x = startX; x <= endX; x++) {
+            const cell = interior.layout[y][x];
+            const screenX = cx + (x - camera.x) * tileSize;
+            const screenY = cy + (y - camera.y) * tileSize;
+            ctx.fillStyle = getCellColor(cell.type);
+            ctx.fillRect(screenX, screenY, tileSize, tileSize);
+            if (cell.type === 'wall') {
+              ctx.strokeStyle = '#000';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(screenX, screenY, tileSize, tileSize);
+            } else if (cell.type === 'door') {
+              ctx.strokeStyle = '#8B4513';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(screenX, screenY, tileSize, tileSize);
+            }
+          }
+        }
+        if (interior.entities) {
+          for (const entity of interior.entities) {
+            const screenX = cx + (entity.position.x - camera.x) * tileSize;
+            const screenY = cy + (entity.position.y - camera.y) * tileSize;
+            const entitySize = 12 * camera.zoom;
+            ctx.fillStyle = getEntityColorFor(entity);
+            ctx.fillRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
+            if (camera.zoom >= 0.8) {
+              ctx.fillStyle = '#fff';
+              ctx.font = `${Math.max(10, 12 * camera.zoom)}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.fillText(getEntityLabel(entity), screenX, screenY - entitySize/2 - 4);
+            }
+          }
+        }
+        const playerSize = 12 * camera.zoom;
+        ctx.fillStyle = '#4a90e2';
+        ctx.fillRect(cx - playerSize/2, cy - playerSize/2, playerSize, playerSize);
+      }
       
       function getCellColor(cellType) {
         const colors = {
@@ -999,6 +1055,8 @@ Click "Connect" to join world "alpha"
               ctx.fillText(`Location: Lighthouse`, 10, 65);
             } else if (currentInterior.type === 'village') {
               ctx.fillText(`Location: Village Interior`, 10, 65);
+            } else if (currentInterior.type === 'town') {
+              ctx.fillText(`Location: Town Interior`, 10, 65);
             } else {
               ctx.fillText(`Location: Interior`, 10, 65);
             }
@@ -1215,11 +1273,16 @@ Click "Connect" to join world "alpha"
       
       function handlePOIInteraction() {
         if (gameState.currentPOI) {
+          // Exit nested building if inside one
+          if (gameState.currentBuilding) { exitBuilding(); return; }
           // Check if we're near a dragon egg and can collect it
           const nearbyEgg = findNearbyEgg();
           if (nearbyEgg) {
             collectEgg(nearbyEgg);
           } else {
+            // Enter town building if at door
+            const b = findNearbyBuildingDoor();
+            if (b) { enterBuilding(b); return; }
             // Wizards Tower stairs handling
             const stair = findNearbyStairs();
             if (stair) {
@@ -1246,6 +1309,30 @@ Click "Connect" to join world "alpha"
             enterDragonGrounds(nearbyPOI);
           }
         }
+      }
+
+      function findNearbyBuildingDoor() {
+        if (!gameState.currentPOI) return null;
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (!interior || interior.type !== 'town' || !interior.buildings) return null;
+        const px = Math.floor(me.x);
+        const py = Math.floor(me.y);
+        for (const b of interior.buildings) {
+          const dx = Math.abs(px - b.door.x);
+          const dy = Math.abs(py - b.door.y);
+          if (dx <= 1 && dy <= 1) return b;
+        }
+        return null;
+      }
+
+      function enterBuilding(b) {
+        if (!socket) return;
+        gameState.currentBuilding = b.id;
+        socket.emit('enter-building', { poiId: gameState.currentPOI, buildingId: b.id, buildingType: b.type });
+      }
+
+      function exitBuilding() {
+        gameState.currentBuilding = null;
       }
       
       function enterVillage(poi) {
@@ -1556,6 +1643,7 @@ Click "Connect" to join world "alpha"
             socket.emit('testing-flags', { ignoreTerrain: true });
           }
           setupRegenListener();
+          setupBuildingListeners();
         });
         
         socket.on('disconnect', (r) => { 
@@ -1713,6 +1801,25 @@ Click "Connect" to join world "alpha"
           } else {
             log(`[ERROR] Failed to regenerate POI: ${p.poiId}`);
           }
+        });
+      }
+
+      // Building interior listeners
+      function setupBuildingListeners() {
+        if (!socket) return;
+        socket.on('building-interior', (data) => {
+          const { poiId, buildingId, interior } = data;
+          if (poiId !== gameState.currentPOI || buildingId !== gameState.currentBuilding) return;
+          gameState.buildingInteriors.set(buildingId, interior);
+          me.x = interior.entrance.x;
+          me.y = Math.max(0, interior.entrance.y - 1);
+          camera.x = me.x;
+          camera.y = me.y;
+          log(`[SYSTEM] Entered building: ${buildingId}`);
+        });
+        socket.on('building-entry-error', (e) => {
+          log(`[ERROR] Building entry failed: ${e.error}`);
+          gameState.currentBuilding = null;
         });
       }
       
