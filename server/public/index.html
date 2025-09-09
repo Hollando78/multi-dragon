@@ -969,6 +969,8 @@ Click "Connect" to join world "alpha"
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           } else if (gameState.nearbyPOI.type === 'dark_cave') {
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          } else if (gameState.nearbyPOI.type === 'ruined_castle') {
+            ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           }
         } else if (gameState.currentPOI) {
           // Exit prompt
@@ -978,6 +980,8 @@ Click "Connect" to join world "alpha"
           const currentInterior = gameState.poiInteriors.get(gameState.currentPOI);
           if (currentInterior && currentInterior.type === 'dark_cave') {
             ctx.fillText('Press SPACE to exit cave', canvas.width / 2, canvas.height - 80);
+          } else if (currentInterior && currentInterior.type === 'ruined_castle') {
+            ctx.fillText('Press SPACE to exit castle', canvas.width / 2, canvas.height - 80);
           } else {
             ctx.fillText('Press SPACE to exit village', canvas.width / 2, canvas.height - 80);
           }
@@ -1134,6 +1138,8 @@ Click "Connect" to join world "alpha"
             enterVillage(nearbyPOI);
           } else if (nearbyPOI && nearbyPOI.type === 'dark_cave') {
             enterCave(nearbyPOI);
+          } else if (nearbyPOI && nearbyPOI.type === 'ruined_castle') {
+            enterCastle(nearbyPOI);
           }
         }
       }
@@ -1181,6 +1187,24 @@ Click "Connect" to join world "alpha"
           setTimeout(() => {
             console.log('No response from server after 5 seconds');
             log('[ERROR] Cave entry timed out - server may not be responding');
+          }, 5000);
+        }
+      }
+
+      function enterCastle(poi) {
+        log('[SYSTEM] Entering ' + poi.name + '...');
+        console.log('Entering ruined castle:', poi.id, 'Socket connected:', !!socket);
+        
+        const cached = gameState.poiInteriors.get(poi.id);
+        if (cached) {
+          console.log('Using cached castle interior');
+          transitionToInterior(poi, cached);
+        } else {
+          console.log('Requesting castle interior from server for POI:', poi.id);
+          socket.emit('enter-poi', { poiId: poi.id });
+          setTimeout(() => {
+            console.log('No response from server after 5 seconds');
+            log('[ERROR] Castle entry timed out - server may not be responding');
           }, 5000);
         }
       }
