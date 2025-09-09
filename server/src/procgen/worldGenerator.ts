@@ -63,6 +63,7 @@ export class WorldGenerator {
 
   private generatePOIs(terrainData: TerrainData, spawnPoint: Vector2): POI[] {
     const pois: POI[] = [];
+    const usedNames = new Set<string>();
     const poiRng = this.rng.getSubRNG('pois');
     const size = terrainData.heightMap.length;
     const minDistance = 3;
@@ -70,35 +71,41 @@ export class WorldGenerator {
     // First, place a special starter village near spawn point
     const spawnVillage = this.placeSpawnVillage(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (spawnVillage) {
+      usedNames.add(spawnVillage.name);
       pois.push(spawnVillage);
     }
 
     // Place special Egg Cavern near spawn point
     const eggCavern = this.placeEggCavern(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (eggCavern) {
+      usedNames.add(eggCavern.name);
       pois.push(eggCavern);
     }
 
     // Place a Ruined Castle near spawn for early testing
     const nearbyCastle = this.placeRuinedCastle(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (nearbyCastle) {
+      nearbyCastle.name = this.ensureUniqueName(nearbyCastle.name, poiRng, usedNames);
       pois.push(nearbyCastle);
     }
 
     // Place a Wizard's Tower near spawn for easy testing
     const nearbyTower = this.placeWizardsTower(terrainData, spawnPoint, poiRng, pois, minDistance);
     if (nearbyTower) {
+      nearbyTower.name = this.ensureUniqueName(nearbyTower.name, poiRng, usedNames);
       pois.push(nearbyTower);
     }
 
     const poiConfigs = [
       // Increase non-unique villages to make the world feel more populated
       { type: POI_TYPES.VILLAGE, count: 3, biomes: ['grassland', 'savanna', 'shrubland', 'forest'], priority: 1 },
+      // Towns: larger settlements
+      { type: POI_TYPES.TOWN, count: 1, biomes: ['grassland', 'forest', 'shrubland', 'hills'], priority: 1 },
       // Ruined castles should be reachable; avoid 'mountain' which is unwalkable
       { type: POI_TYPES.RUINED_CASTLE, count: 1, biomes: ['hills', 'alpine'], priority: 2 },
       { type: POI_TYPES.WIZARDS_TOWER, count: 1, biomes: ['forest', 'hills', 'tundra'], priority: 3 },
       { type: POI_TYPES.DARK_CAVE, count: 2, biomes: ['mountain', 'hills', 'taiga'], priority: 4 },
-      { type: POI_TYPES.DRAGON_GROUNDS, count: 1, biomes: ['mountain', 'alpine'], priority: 5 },
+      { type: POI_TYPES.DRAGON_GROUNDS, count: 0, biomes: ['mountain', 'alpine'], priority: 5 },
       { type: POI_TYPES.LIGHTHOUSE, count: 0, biomes: ['beach', 'coast'], priority: 6 },
       { type: POI_TYPES.ANCIENT_CIRCLE, count: 1, biomes: ['forest', 'grassland', 'shrubland'], priority: 7 }
     ];
@@ -126,15 +133,17 @@ export class WorldGenerator {
             }
 
             if (!tooClose) {
+              const name = this.generateUniqueName(config.type, poiRng, usedNames);
               pois.push({
                 id: poiRng.generateUUID(`poi-${config.type}-${i}`),
                 type: config.type,
                 position,
-                name: this.generatePOIName(config.type, poiRng),
+                name,
                 discovered: config.type === POI_TYPES.VILLAGE,
                 seed: poiRng.generateUUID(`seed-${config.type}-${i}`),
                 rarity: this.rollRarity(config.type, poiRng)
               });
+              usedNames.add(name);
               placed = true;
             }
           }
@@ -146,7 +155,18 @@ export class WorldGenerator {
 
     // Place a Lighthouse on a prominent headland
     const lighthouse = this.placeLighthouse(terrainData, poiRng, pois, minDistance);
-    if (lighthouse) pois.push(lighthouse);
+    if (lighthouse) {
+      lighthouse.name = this.ensureUniqueName(lighthouse.name, poiRng, usedNames);
+      usedNames.add(lighthouse.name);
+      pois.push(lighthouse);
+    }
+
+    const dragonGrounds = this.placeDragonGrounds(terrainData, poiRng, pois, minDistance);
+    if (dragonGrounds) {
+      dragonGrounds.name = this.ensureUniqueName(dragonGrounds.name, poiRng, usedNames);
+      usedNames.add(dragonGrounds.name);
+      pois.push(dragonGrounds);
+    }
 
     return pois;
   }
@@ -354,6 +374,44 @@ export class WorldGenerator {
     return rng.randomElement(names[type]) || 'Unknown Place';
   }
 
+  private roman(n: number): string {
+    const numerals: [number, string][] = [
+      [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+      [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+      [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+    ];
+    let s = '';
+    for (const [val, sym] of numerals) {
+      while (n >= val) { s += sym; n -= val; }
+    }
+    return s;
+  }
+
+  private ensureUniqueName(base: string, rng: DeterministicRNG, used: Set<string>): string {
+    if (!used.has(base)) return base;
+    // Try suffixes with Roman numerals deterministically
+    for (let i = 2; i < 50; i++) {
+      const candidate = `${base} ${this.roman(i)}`;
+      if (!used.has(candidate)) return candidate;
+    }
+    // Fallback: append a short RNG token
+    let token = rng.generateUUID('name').slice(0, 4);
+    let cand = `${base} ${token}`;
+    while (used.has(cand)) { token = rng.generateUUID('name').slice(0, 4); cand = `${base} ${token}`; }
+    return cand;
+  }
+
+  private generateUniqueName(type: POIType, rng: DeterministicRNG, used: Set<string>): string {
+    // Try picking a base name a few times; if all used, append suffix
+    for (let attempts = 0; attempts < 10; attempts++) {
+      const base = this.generatePOIName(type, rng);
+      if (!used.has(base)) return base;
+    }
+    // Append suffix to make unique
+    const base = this.generatePOIName(type, rng);
+    return this.ensureUniqueName(base, rng, used);
+  }
+
   private rollRarity(type: POIType, rng: DeterministicRNG): Rarity {
     // Default weights: common 60%, rare 25%, epic 12%, legendary 3%
     // Slightly favor higher rarity for towers
@@ -380,7 +438,7 @@ export class WorldGenerator {
         const biome = biomeMap[y][x];
         if (biome !== 'coast' && biome !== 'beach') continue;
         const h = terrainData.heightMap[y][x];
-        if (h <= SEA_LEVEL + 2) continue;
+        if (h <= SEA_LEVEL + 1) continue;
         // Count ocean neighbors
         let ocean8 = 0, land8 = 0;
         for (let dy = -1; dy <= 1; dy++) {
@@ -393,7 +451,7 @@ export class WorldGenerator {
         }
         // Headland heuristic: many ocean neighbors
         const score = ocean8 * 2 - land8;
-        if (ocean8 >= 4 && score > (best?.score ?? -1)) {
+        if (ocean8 >= 3 && score > (best?.score ?? -1)) {
           const pos = { x, y };
           if (existing.every(e => distance(pos, e.position) >= minDistance)) {
             best = { x, y, score };
@@ -401,7 +459,35 @@ export class WorldGenerator {
         }
       }
     }
-    if (!best) return null;
+    if (!best) {
+      // Fallback: any coast/beach adjacent to ocean
+      const candidates: { x: number; y: number }[] = [];
+      for (let y = 1; y < size - 1; y += stride) {
+        for (let x = 1; x < size - 1; x += stride) {
+          const biome = biomeMap[y][x];
+          if (biome !== 'coast' && biome !== 'beach') continue;
+          let oceanNbr = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              if (biomeMap[y + dy][x + dx] === 'ocean') oceanNbr++;
+            }
+          }
+          if (oceanNbr >= 2) candidates.push({ x, y });
+        }
+      }
+      if (!candidates.length) return null;
+      const pos = rng.randomElement(candidates)!;
+      return {
+        id: rng.generateUUID('lighthouse-headland'),
+        type: POI_TYPES.LIGHTHOUSE,
+        position: pos,
+        name: this.generatePOIName(POI_TYPES.LIGHTHOUSE, rng),
+        discovered: true,
+        seed: rng.generateUUID('lighthouse-seed'),
+        rarity: this.rollRarity(POI_TYPES.LIGHTHOUSE, rng)
+      };
+    }
     const position = { x: best.x, y: best.y };
     return {
       id: rng.generateUUID('lighthouse-headland'),
@@ -411,6 +497,49 @@ export class WorldGenerator {
       discovered: true,
       seed: rng.generateUUID('lighthouse-seed'),
       rarity: this.rollRarity(POI_TYPES.LIGHTHOUSE, rng)
+    };
+  }
+
+  // Edge of mountain or deep hills
+  private placeDragonGrounds(terrainData: TerrainData, rng: DeterministicRNG, existing: POI[], minDistance: number): POI | null {
+    const size = terrainData.heightMap.length;
+    const biomeMap = terrainData.biomeMap;
+    let best: { x: number; y: number; score: number } | null = null;
+    const stride = 2;
+    for (let y = 2; y < size - 2; y += stride) {
+      for (let x = 2; x < size - 2; x += stride) {
+        const biome = biomeMap[y][x];
+        const h = terrainData.heightMap[y][x];
+        if (biome !== 'mountain' && biome !== 'hills') continue;
+        let mountainNbr = 0, hillsNbr = 0, otherNbr = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nb = biomeMap[y + dy][x + dx];
+            if (nb === 'mountain') mountainNbr++; else if (nb === 'hills') hillsNbr++; else otherNbr++;
+          }
+        }
+        // Score: edge of mountain (many non-mountain around) or deep hills (many hill neighbors)
+        let score = -999;
+        if (biome === 'mountain' && otherNbr >= 3 && h > 60) score = otherNbr * 2 + hillsNbr;
+        if (biome === 'hills' && hillsNbr >= 5 && h > 40) score = Math.max(score, hillsNbr * 2 - otherNbr);
+        if (score <= 0) continue;
+        const pos = { x, y };
+        if (existing.every(e => distance(pos, e.position) >= minDistance)) {
+          if (!best || score > best.score) best = { x, y, score };
+        }
+      }
+    }
+    if (!best) return null;
+    const position = { x: best.x, y: best.y };
+    return {
+      id: rng.generateUUID('dragon-grounds'),
+      type: POI_TYPES.DRAGON_GROUNDS,
+      position,
+      name: this.generatePOIName(POI_TYPES.DRAGON_GROUNDS, rng),
+      discovered: true,
+      seed: rng.generateUUID('dragon-grounds-seed'),
+      rarity: this.rollRarity(POI_TYPES.DRAGON_GROUNDS, rng)
     };
   }
 

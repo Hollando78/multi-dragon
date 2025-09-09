@@ -16,10 +16,12 @@ import { wsEvents, wsConnections } from '../metrics.js';
 import { validateMovement } from '../utils/collision.js';
 import { wsRateLimit } from '../services/rateLimit.js';
 import { generateVillageInterior } from '../procgen/villageInterior.js';
+import { generateTownInterior } from '../procgen/townInterior.js';
 import { generateDarkCave } from '../procgen/caveInterior.js';
 import { generateRuinedCastle } from '../procgen/ruinedCastleInterior.js';
 import { generateWizardsTower } from '../procgen/wizardsTowerInterior.js';
 import { generateLighthouse } from '../procgen/lighthouseInterior.js';
+import { generateDragonGrounds } from '../procgen/dragonGroundsInterior.js';
 import { getRedis } from '../services/redis.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
@@ -280,14 +282,24 @@ export function attachWorldNamespace(io: Namespace) {
         
         const poiPixelX = poi.position.x * 8;
         const poiPixelY = poi.position.y * 8;
-        const distance = Math.sqrt(
-          Math.pow(playerState.position.x - poiPixelX, 2) + 
-          Math.pow(playerState.position.y - poiPixelY, 2)
-        );
-        
-        if (distance > 24) { // Same as client INTERACTION_DISTANCE
-          socket.emit('poi-entry-error', { error: 'too_far' });
-          return;
+        // Special rule: Lighthouse requires being at the external door (south side)
+        if (poi.type === 'lighthouse') {
+          const doorX = poiPixelX;
+          const doorY = poiPixelY + 8;
+          const dx = Math.abs(playerState.position.x - doorX);
+          const dy = playerState.position.y - poiPixelY; // south of center
+          const d = Math.hypot(playerState.position.x - doorX, playerState.position.y - doorY);
+          const atDoor = dx <= 12 && dy >= 0 && d <= 16;
+          if (!atDoor) {
+            socket.emit('poi-entry-error', { error: 'door_required' });
+            return;
+          }
+        } else {
+          const distance = Math.hypot(playerState.position.x - poiPixelX, playerState.position.y - poiPixelY);
+          if (distance > 24) { // Same as client INTERACTION_DISTANCE
+            socket.emit('poi-entry-error', { error: 'too_far' });
+            return;
+          }
         }
         
         // Check if interior already exists in cache/database
@@ -297,6 +309,8 @@ export function attachWorldNamespace(io: Namespace) {
           // Generate new interior
           if (poi.type === 'village') {
             interior = generateVillageInterior(poiId, poi.seed, (poi as any).rarity || 'common');
+          } else if (poi.type === 'town') {
+            interior = generateTownInterior(poiId, poi.seed, (poi as any).rarity || 'common');
           } else if (poi.type === 'dark_cave') {
             // Generate cave with guaranteed egg for the special "Egg Cavern"
             const guaranteedEgg = poi.name === 'Egg Cavern';
@@ -307,6 +321,8 @@ export function attachWorldNamespace(io: Namespace) {
             interior = generateWizardsTower(poiId, poi.seed, (poi as any).rarity || 'common');
           } else if (poi.type === 'lighthouse') {
             interior = generateLighthouse(poiId, poi.seed, (poi as any).rarity || 'common');
+          } else if (poi.type === 'dragon_grounds') {
+            interior = generateDragonGrounds(poiId, poi.seed, (poi as any).rarity || 'common');
           }
           
           if (interior) {

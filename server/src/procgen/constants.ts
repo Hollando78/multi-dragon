@@ -23,6 +23,7 @@ export type Biome = typeof BIOMES[keyof typeof BIOMES];
 
 export const POI_TYPES = {
   VILLAGE: 'village',
+  TOWN: 'town',
   RUINED_CASTLE: 'ruined_castle',
   WIZARDS_TOWER: 'wizards_tower',
   DARK_CAVE: 'dark_cave',

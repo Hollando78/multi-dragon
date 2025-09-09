@@ -852,8 +852,8 @@ Click "Connect" to join world "alpha"
             const screenY = cy + (entity.position.y - camera.y) * tileSize;
             const entitySize = 12 * camera.zoom;
             
-            // Draw entity based on type
-            ctx.fillStyle = getEntityColor(entity.type);
+            // Draw entity based on type and state
+            ctx.fillStyle = getEntityColorFor(entity);
             if (entity.type === 'dragon_egg') {
               // Draw egg shape (ellipse)
               const eggWidth = entitySize * 0.8;
@@ -928,10 +928,28 @@ Click "Connect" to join world "alpha"
           dragon_egg: '#f59e0b', // golden egg
           keeper: '#eab308',     // yellow
           boat: '#0ea5e9',       // blue
+          dragon: '#dc2626',     // red
+          junior_dragon: '#f97316', // orange
+          thrall: '#9ca3af',     // gray
+          prisoner: '#60a5fa',   // blue
+          gold_pile: '#eab308',  // yellow
           bat: '#6b7280',        // gray bat
           slime: '#22c55e'       // green slime
         };
         return colors[entityType] || '#6b7280';
+      }
+
+      // Choose color taking into account entity state (e.g., dragon type)
+      function getEntityColorFor(entity) {
+        if (!entity) return '#6b7280';
+        if (entity.type === 'dragon' && entity.state && entity.state.dragonType) {
+          const t = String(entity.state.dragonType);
+          if (t === 'red') return '#ef4444';
+          if (t === 'green') return '#22c55e';
+          if (t === 'brown') return '#92400e';
+          if (t === 'gold') return '#f59e0b';
+        }
+        return getEntityColor(entity.type);
       }
 
       function getEntityLabel(entity) {
@@ -944,6 +962,11 @@ Click "Connect" to join world "alpha"
           adept: 'Adept',
           keeper: 'Lighthouse Keeper',
           boat: 'Boat',
+          dragon: 'Dragon',
+          junior_dragon: 'Young Dragon',
+          thrall: 'Thrall',
+          prisoner: 'Prisoner',
+          gold_pile: 'Gold',
           dragon_egg: 'Dragon Egg',
           bat: 'Bat',
           slime: 'Slime'
@@ -1007,13 +1030,17 @@ Click "Connect" to join world "alpha"
           ctx.fillStyle = '#ffff00';
           ctx.font = '14px sans-serif';
           ctx.textAlign = 'center';
-          if (gameState.nearbyPOI.type === 'village') {
+          if (gameState.nearbyPOI.type === 'village' || gameState.nearbyPOI.type === 'town') {
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           } else if (gameState.nearbyPOI.type === 'dark_cave') {
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           } else if (gameState.nearbyPOI.type === 'ruined_castle') {
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           } else if (gameState.nearbyPOI.type === 'wizards_tower') {
+            ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          } else if (gameState.nearbyPOI.type === 'lighthouse') {
+            ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+          } else if (gameState.nearbyPOI.type === 'dragon_grounds') {
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           }
         } else if (gameState.currentPOI) {
@@ -1162,9 +1189,20 @@ Click "Connect" to join world "alpha"
         for (const poi of worldData.world.pois) {
           const poiPixelX = poi.position.x * 8;
           const poiPixelY = poi.position.y * 8;
-          const distance = Math.sqrt(
-            Math.pow(me.x - poiPixelX, 2) + Math.pow(me.y - poiPixelY, 2)
-          );
+          // Special entry rule for Lighthouse: must be at the door (south side)
+          if (poi.type === 'lighthouse') {
+            const doorX = poiPixelX;
+            const doorY = poiPixelY + 8; // south edge
+            const dx = Math.abs(me.x - doorX);
+            const dy = me.y - poiPixelY; // must be south of center
+            const doorDist = Math.hypot(me.x - doorX, me.y - doorY);
+            const atDoor = dx <= 12 && dy >= 0 && doorDist <= 16; // narrow window at the door
+            if (!atDoor) continue;
+            const d = doorDist;
+            if (d < closestDistance) { closest = poi; closestDistance = d; }
+            continue;
+          }
+          const distance = Math.hypot(me.x - poiPixelX, me.y - poiPixelY);
           
           if (distance <= INTERACTION_DISTANCE && distance < closestDistance) {
             closest = poi;
@@ -1194,7 +1232,7 @@ Click "Connect" to join world "alpha"
         } else {
           // We're in overworld - try to enter nearby POI
           const nearbyPOI = findNearbyPOI();
-          if (nearbyPOI && nearbyPOI.type === 'village') {
+          if (nearbyPOI && (nearbyPOI.type === 'village' || nearbyPOI.type === 'town')) {
             enterVillage(nearbyPOI);
           } else if (nearbyPOI && nearbyPOI.type === 'dark_cave') {
             enterCave(nearbyPOI);
@@ -1202,6 +1240,10 @@ Click "Connect" to join world "alpha"
             enterCastle(nearbyPOI);
           } else if (nearbyPOI && nearbyPOI.type === 'wizards_tower') {
             enterTower(nearbyPOI);
+          } else if (nearbyPOI && nearbyPOI.type === 'lighthouse') {
+            enterLighthouse(nearbyPOI);
+          } else if (nearbyPOI && nearbyPOI.type === 'dragon_grounds') {
+            enterDragonGrounds(nearbyPOI);
           }
         }
       }
@@ -1267,6 +1309,28 @@ Click "Connect" to join world "alpha"
             console.log('No response from server after 5 seconds');
             log('[ERROR] Tower entry timed out - server may not be responding');
           }, 5000);
+        }
+      }
+
+      function enterLighthouse(poi) {
+        log('[SYSTEM] Entering ' + poi.name + '...');
+        const cached = gameState.poiInteriors.get(poi.id);
+        if (cached) {
+          transitionToInterior(poi, cached);
+        } else {
+          socket.emit('enter-poi', { poiId: poi.id });
+          setTimeout(() => log('[ERROR] Lighthouse entry timed out - server may not be responding'), 5000);
+        }
+      }
+
+      function enterDragonGrounds(poi) {
+        log('[SYSTEM] Entering ' + poi.name + '...');
+        const cached = gameState.poiInteriors.get(poi.id);
+        if (cached) {
+          transitionToInterior(poi, cached);
+        } else {
+          socket.emit('enter-poi', { poiId: poi.id });
+          setTimeout(() => log('[ERROR] Dragon Grounds entry timed out - server may not be responding'), 5000);
         }
       }
 
