@@ -17,6 +17,7 @@ import { validateMovement } from '../utils/collision.js';
 import { wsRateLimit } from '../services/rateLimit.js';
 import { generateVillageInterior } from '../procgen/villageInterior.js';
 import { generateDarkCave } from '../procgen/caveInterior.js';
+import { generateRuinedCastle } from '../procgen/ruinedCastleInterior.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
 
@@ -271,6 +272,8 @@ export function attachWorldNamespace(io: Namespace) {
             // Generate cave with guaranteed egg for the special "Egg Cavern"
             const guaranteedEgg = poi.name === 'Egg Cavern';
             interior = generateDarkCave(poiId, poi.seed, { guaranteedEgg });
+          } else if (poi.type === 'ruined_castle') {
+            interior = generateRuinedCastle(poiId, poi.seed);
           }
           
           if (interior) {
