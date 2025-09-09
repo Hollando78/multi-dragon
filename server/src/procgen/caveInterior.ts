@@ -176,6 +176,7 @@ export function generateDarkCave(poiId: string, seed: string, opts?: { guarantee
     seed,
     generatedAt: new Date().toISOString(),
     layout: grid,
+    entrance: { x: entranceX, y: entranceY }, // Add entrance coordinates for player spawn
     entities,
     containers,
     cleared: false

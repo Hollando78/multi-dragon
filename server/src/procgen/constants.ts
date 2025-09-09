@@ -59,6 +59,7 @@ export interface POIInterior {
   seed: string;
   generatedAt: string;
   layout: Array<Array<{ type: string; walkable: boolean; sprite?: string }>>;
+  entrance?: { x: number; y: number }; // Optional entrance coordinates
   entities: Array<{
     id: string;
     type: string;
