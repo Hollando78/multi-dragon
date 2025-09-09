@@ -13,7 +13,9 @@ import { addPresence, removePresence } from '../services/presence.js';
 import { getDb } from '../services/db.js';
 import { manifestForSeed } from '../services/worldManifest.js';
 import { wsEvents, wsConnections } from '../metrics.js';
+import { validateMovement } from '../utils/collision.js';
 import { wsRateLimit } from '../services/rateLimit.js';
+import { generateVillageInterior } from '../procgen/villageInterior.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
 
@@ -69,7 +71,12 @@ export function attachWorldNamespace(io: Namespace) {
     const seed = socket.nsp.name.split('/world/')[1] || 'default';
     const userId: string = (socket.data as any).userId || `guest:${socket.id}`;
     const name: string | undefined = (socket.data as any).name;
-    const start = { x: 0, y: 0 };
+    
+    // Get spawn point from world generation
+    const worldManifest = manifestForSeed(seed);
+    const spawnPoint = worldManifest.world?.spawnPoint || { x: 128, y: 128 };
+    const start = { x: spawnPoint.x * 8, y: spawnPoint.y * 8 }; // Convert world tiles to pixel coordinates
+    
     const chunkId = getChunkId(start.x, start.y, config.chunkSize);
     socket.join(chunkId);
 
@@ -102,15 +109,21 @@ export function attachWorldNamespace(io: Namespace) {
       const dy = data.y - prev.position.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const maxDist = MAX_SPEED * dt;
+      let newX, newY;
       if (dist > maxDist) {
         // Clamp movement to max speed to prevent teleport
         const ratio = maxDist / dist;
-        prev.position.x = prev.position.x + dx * ratio;
-        prev.position.y = prev.position.y + dy * ratio;
+        newX = prev.position.x + dx * ratio;
+        newY = prev.position.y + dy * ratio;
       } else {
-        prev.position.x = data.x;
-        prev.position.y = data.y;
+        newX = data.x;
+        newY = data.y;
       }
+      
+      // Validate movement with collision detection
+      const validatedPosition = validateMovement(prev.position.x, prev.position.y, newX, newY, seed);
+      prev.position.x = validatedPosition.x;
+      prev.position.y = validatedPosition.y;
       prev.lastUpdate = now;
 
       // Chunk transitions
@@ -208,6 +221,61 @@ export function attachWorldNamespace(io: Namespace) {
         });
       } catch (e) {
         socket.emit('poi-interaction', { poiId, error: 'locked' });
+      }
+    });
+
+    // Village entry handler
+    socket.on('enter-poi', async ({ poiId }: { poiId: string }) => {
+      if (!(await wsRateLimit(userId, 'enter-poi', 5, 30))) return;
+      wsEvents.inc({ namespace: socket.nsp.name, event: 'enter-poi' });
+      
+      try {
+        // Validate POI exists and is close to player
+        const worldManifest = manifestForSeed(seed);
+        const poi = worldManifest.world.pois.find((p: any) => p.id === poiId);
+        if (!poi) {
+          socket.emit('poi-entry-error', { error: 'poi_not_found' });
+          return;
+        }
+        
+        // Check distance (server-side validation)
+        const playerState = players.get(socket.id);
+        if (!playerState) return;
+        
+        const poiPixelX = poi.position.x * 8;
+        const poiPixelY = poi.position.y * 8;
+        const distance = Math.sqrt(
+          Math.pow(playerState.position.x - poiPixelX, 2) + 
+          Math.pow(playerState.position.y - poiPixelY, 2)
+        );
+        
+        if (distance > 24) { // Same as client INTERACTION_DISTANCE
+          socket.emit('poi-entry-error', { error: 'too_far' });
+          return;
+        }
+        
+        // Check if interior already exists in cache/database
+        let interior = await getPOIState(seed, `${poiId}:interior`);
+        
+        if (!interior) {
+          // Generate new interior
+          if (poi.type === 'village') {
+            interior = generateVillageInterior(poiId, poi.seed);
+            // Cache the generated interior
+            await setPOIState(seed, `${poiId}:interior`, interior);
+            logger.info({ poiId, seed }, 'generated_village_interior');
+          } else {
+            socket.emit('poi-entry-error', { error: 'unsupported_poi_type' });
+            return;
+          }
+        }
+        
+        // Send interior data to client
+        socket.emit('poi-interior', { poiId, interior });
+        
+      } catch (e) {
+        logger.error({ poiId, error: (e as Error).message }, 'enter_poi_error');
+        socket.emit('poi-entry-error', { error: 'server_error' });
       }
     });
 

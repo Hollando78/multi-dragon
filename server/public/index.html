@@ -5,130 +5,1269 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Multiplayer Dragon Isle — Test Client</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 1rem; }
-      #log { height: 200px; overflow: auto; background: #111; color: #0f0; padding: .5rem; }
-      .row { display: flex; gap: .5rem; margin: .5rem 0; }
-      input, button, select { padding: .4rem; }
-      canvas { border: 1px solid #ccc; }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        height: 100vh;
+        overflow: hidden;
+        background: #1a1a1a;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      /* Header bar */
+      #header {
+        background: #2a2a2a;
+        border-bottom: 1px solid #444;
+        padding: 0.75rem 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-shrink: 0;
+      }
+      
+      #header h1 {
+        font-size: 1.2rem;
+        color: #fff;
+        font-weight: 500;
+        margin-right: auto;
+      }
+      
+      #header input, #header button {
+        padding: 0.4rem 0.8rem;
+        border: 1px solid #444;
+        background: #1a1a1a;
+        color: #fff;
+        border-radius: 4px;
+      }
+      
+      #header button {
+        background: #3b82f6;
+        border: none;
+        cursor: pointer;
+        font-weight: 500;
+      }
+      
+      #header button:hover {
+        background: #2563eb;
+      }
+      
+      #status {
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        background: #333;
+        color: #888;
+      }
+      
+      #status.connected {
+        background: #064e3b;
+        color: #10b981;
+      }
+      
+      /* Game canvas area */
+      #gameContainer {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        background: radial-gradient(circle at center, #2a2a2a 0%, #1a1a1a 100%);
+      }
+      
+      canvas {
+        border: 2px solid #333;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+        background: #000;
+        max-width: 100%;
+        max-height: 100%;
+      }
+      
+      /* Debug controls overlay */
+      #debugControls {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: rgba(42, 42, 42, 0.9);
+        padding: 0.5rem;
+        border-radius: 4px;
+        display: flex;
+        gap: 0.5rem;
+      }
+      
+      #debugControls button {
+        padding: 0.3rem 0.6rem;
+        background: #444;
+        color: #fff;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+      
+      #debugControls button:hover {
+        background: #555;
+      }
+      
+      /* Chat footer */
+      #chatPanel {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #2a2a2a;
+        border-top: 1px solid #444;
+        transition: transform 0.3s ease;
+        z-index: 100;
+      }
+      
+      #chatPanel.collapsed {
+        transform: translateY(calc(100% - 40px));
+      }
+      
+      #chatToggle {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 40px;
+        background: #333;
+        display: flex;
+        align-items: center;
+        padding: 0 1rem;
+        cursor: pointer;
+        user-select: none;
+      }
+      
+      #chatToggle:hover {
+        background: #3a3a3a;
+      }
+      
+      #chatToggle span {
+        color: #fff;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      
+      #chatToggle .arrow {
+        margin-left: auto;
+        color: #888;
+        transition: transform 0.3s;
+      }
+      
+      #chatPanel.collapsed .arrow {
+        transform: rotate(180deg);
+      }
+      
+      #chatContent {
+        padding: 0 1rem 1rem;
+        padding-top: 50px;
+        height: 250px;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      #log {
+        flex: 1;
+        overflow-y: auto;
+        background: #1a1a1a;
+        color: #0f0;
+        padding: 0.5rem;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        margin-bottom: 0.5rem;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      
+      #chatInput {
+        display: flex;
+        gap: 0.5rem;
+      }
+      
+      #chatInput select, #chatInput input {
+        padding: 0.4rem;
+        background: #1a1a1a;
+        border: 1px solid #444;
+        color: #fff;
+        border-radius: 4px;
+      }
+      
+      #chatInput select {
+        width: 100px;
+      }
+      
+      #chatInput input {
+        flex: 1;
+      }
+      
+      /* Controls hint */
+      #controls {
+        position: absolute;
+        bottom: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: #fff;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        pointer-events: none;
+        transition: opacity 0.3s;
+      }
+      
+      #chatPanel.collapsed ~ #gameContainer #controls {
+        bottom: 50px;
+      }
+      
+      /* Minimap styles */
+      #minimapContainer {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        background: rgba(0, 0, 0, 0.8);
+        border: 2px solid #333;
+        border-radius: 8px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        z-index: 50;
+      }
+      
+      #minimapContainer.hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.8);
+      }
+      
+      #minimapContainer.normal {
+        width: 200px;
+        height: 200px;
+      }
+      
+      #minimapContainer.fullscreen {
+        width: 400px;
+        height: 400px;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        border: 3px solid #666;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+      }
+      
+      #minimap {
+        width: 100%;
+        height: calc(100% - 30px);
+        display: block;
+      }
+      
+      #minimapHeader {
+        height: 30px;
+        background: #2a2a2a;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 0.5rem;
+        font-size: 0.8rem;
+        color: #fff;
+        cursor: pointer;
+        user-select: none;
+      }
+      
+      #minimapHeader:hover {
+        background: #333;
+      }
+      
+      #minimapTitle {
+        font-weight: 500;
+      }
+      
+      #minimapToggle {
+        color: #aaa;
+        font-size: 0.7rem;
+      }
+      
+      /* Fullscreen overlay */
+      #minimapContainer.fullscreen::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: -1;
+      }
     </style>
   </head>
   <body>
-    <h1>Dragon Isle — Realtime Test</h1>
-    <div class="row">
-      <label>World Seed: <input id="seed" value="alpha" /></label>
+    <!-- Header with connection controls -->
+    <div id="header">
+      <h1>Dragon Isle — Multiplayer Test</h1>
+      <label>World: <input id="seed" value="alpha" size="10" /></label>
       <button id="connect">Connect</button>
       <span id="status">disconnected</span>
     </div>
-    <div class="row">
-      <label>Channel: 
-        <select id="channel">
-          <option>local</option>
-          <option>world</option>
-        </select>
-      </label>
-      <input id="chat" placeholder="Type message and press Enter" style="flex:1" />
+    
+    <!-- Main game area -->
+    <div id="gameContainer">
+      <canvas id="view"></canvas>
+      
+      <!-- Minimap -->
+      <div id="minimapContainer" class="normal">
+        <div id="minimapHeader">
+          <span id="minimapTitle">World Map</span>
+          <span id="minimapToggle">Click to toggle</span>
+        </div>
+        <canvas id="minimap"></canvas>
+      </div>
+      
+      <!-- Debug controls -->
+      <div id="debugControls">
+        <button id="interact">Interact POI</button>
+        <button id="breed">Breed Demo</button>
+      </div>
+      
+      <!-- Movement controls hint -->
+      <div id="controls">WASD: Move • M: Toggle minimap • Mouse wheel: Zoom • +/-: Zoom • 0: Reset zoom</div>
     </div>
-    <div class="row">
-      <button id="interact">Interact POI</button>
-      <button id="breed">Breed (demo)</button>
+    
+    <!-- Collapsible chat panel -->
+    <div id="chatPanel">
+      <div id="chatToggle">
+        <span>Chat & Logs</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div id="chatContent">
+        <pre id="log">Welcome to Dragon Isle Multiplayer Test Client
+Click "Connect" to join world "alpha"
+</pre>
+        <div id="chatInput">
+          <select id="channel">
+            <option>local</option>
+            <option>world</option>
+            <option>guild</option>
+          </select>
+          <input id="chat" placeholder="Type message and press Enter" />
+        </div>
+      </div>
     </div>
-    <canvas id="view" width="512" height="384"></canvas>
-    <pre id="log"></pre>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      const log = (m) => {
-        const el = document.getElementById('log');
-        el.textContent += `\n${new Date().toLocaleTimeString()} ${m}`;
-        el.scrollTop = el.scrollHeight;
-      };
-
+      // Global variables - declare at the very top
       let socket;
-      let me = { x: 0, y: 0 };
+      let me = { x: 0, y: 0, userId: null };
       const others = new Map();
+      let worldData = null;
+      let minimapState = 'normal'; // 'hidden', 'normal', 'fullscreen'
+      
+      // Game state management
+      let gameState = {
+        currentPOI: null, // null = overworld, string = POI interior
+        poiInteriors: new Map(), // cached interior layouts
+        nearbyPOI: null // POI player is close to (for interaction prompts)
+      };
+      
+      // Camera system with deadzone and zoom
+      const camera = { x: 0, y: 0, zoom: 1.0 };
+      const BASE_DEADZONE_WIDTH = 100;  // Base width of the deadzone at 1.0x zoom
+      const BASE_DEADZONE_HEIGHT = 100; // Base height of the deadzone at 1.0x zoom
+      const CAMERA_SMOOTHING = 0.1; // Smooth camera movement (0-1, higher = faster)
+      const MIN_ZOOM = 0.3;  // Minimum zoom level (zoomed out)
+      const MAX_ZOOM = 3.0;  // Maximum zoom level (zoomed in)
+      const ZOOM_SPEED = 0.1; // Zoom change per wheel tick
 
       const canvas = document.getElementById('view');
       const ctx = canvas.getContext('2d');
+      
+      // Minimap setup
+      const minimapCanvas = document.getElementById('minimap');
+      const minimapCtx = minimapCanvas.getContext('2d');
+      
+      // Resize canvas to fill container
+      function resizeCanvas() {
+        const canvas = document.getElementById('view');
+        const container = document.getElementById('gameContainer');
+        const maxWidth = container.clientWidth - 40;
+        const maxHeight = container.clientHeight - 40;
+        
+        // Set a good default size, but scale to fit
+        const targetWidth = 1024;
+        const targetHeight = 768;
+        
+        const scale = Math.min(maxWidth / targetWidth, maxHeight / targetHeight, 1);
+        canvas.width = targetWidth * scale;
+        canvas.height = targetHeight * scale;
+        
+        // Resize minimap canvas
+        resizeMinimap();
+      }
+      
+      function resizeMinimap() {
+        const container = document.getElementById('minimapContainer');
+        const canvas = document.getElementById('minimap');
+        
+        if (minimapState === 'hidden') return;
+        
+        const rect = container.getBoundingClientRect();
+        const headerHeight = 30;
+        canvas.width = rect.width;
+        canvas.height = rect.height - headerHeight;
+      }
+      
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+      
+      // Chat panel toggle
+      const chatPanel = document.getElementById('chatPanel');
+      const chatToggle = document.getElementById('chatToggle');
+      chatToggle.addEventListener('click', () => {
+        chatPanel.classList.toggle('collapsed');
+      });
+      
+      // Start with chat collapsed
+      chatPanel.classList.add('collapsed');
+      
+      // Minimap state toggling
+      function toggleMinimapState() {
+        const container = document.getElementById('minimapContainer');
+        const title = document.getElementById('minimapTitle');
+        const toggle = document.getElementById('minimapToggle');
+        
+        // Cycle through states: normal -> fullscreen -> hidden -> normal
+        switch (minimapState) {
+          case 'normal':
+            minimapState = 'fullscreen';
+            container.className = 'fullscreen';
+            title.textContent = 'World Map - Fullscreen';
+            toggle.textContent = 'Click to hide';
+            break;
+          case 'fullscreen':
+            minimapState = 'hidden';
+            container.className = 'hidden';
+            title.textContent = 'World Map';
+            toggle.textContent = 'Click to show';
+            break;
+          case 'hidden':
+            minimapState = 'normal';
+            container.className = 'normal';
+            title.textContent = 'World Map';
+            toggle.textContent = 'Click to toggle';
+            break;
+        }
+        
+        // Resize minimap canvas after state change
+        setTimeout(resizeMinimap, 350); // Wait for CSS transition
+      }
+      
+      // Add event listener to minimap header
+      document.getElementById('minimapHeader').addEventListener('click', toggleMinimapState);
+      
+      // Keyboard shortcut for minimap (M key)
+      window.addEventListener('keydown', (e) => {
+        // Don't trigger when typing in chat
+        if (e.target.id === 'chat') return;
+        
+        if (e.key.toLowerCase() === 'm') {
+          e.preventDefault();
+          toggleMinimapState();
+        }
+      });
+      
+      // Mouse wheel zoom controls
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        
+        const zoomDirection = e.deltaY > 0 ? -1 : 1; // Invert for natural scrolling
+        const newZoom = camera.zoom + (zoomDirection * ZOOM_SPEED);
+        camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+      }, { passive: false });
+      
+      // Keyboard zoom controls (+ and - keys)
+      window.addEventListener('keydown', (e) => {
+        // Don't trigger when typing in chat
+        if (e.target.id === 'chat') return;
+        
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          camera.zoom = Math.min(MAX_ZOOM, camera.zoom + ZOOM_SPEED);
+        } else if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          camera.zoom = Math.max(MIN_ZOOM, camera.zoom - ZOOM_SPEED);
+        } else if (e.key === '0') {
+          e.preventDefault();
+          camera.zoom = 1.0; // Reset to default zoom
+        }
+      });
+      
+      // Logging function
+      const log = (m) => {
+        const el = document.getElementById('log');
+        el.textContent += `${new Date().toLocaleTimeString()} ${m}\n`;
+        el.scrollTop = el.scrollHeight;
+        
+        // Flash chat panel if collapsed and new message
+        if (chatPanel.classList.contains('collapsed')) {
+          chatToggle.style.background = '#444';
+          setTimeout(() => chatToggle.style.background = '', 200);
+        }
+      };
+
+      
+      // Biome colors for rendering
+      const BIOME_COLORS = {
+        ocean: '#1e40af',     // deep blue
+        beach: '#fbbf24',     // sandy yellow
+        coast: '#22d3ee',     // light blue
+        grassland: '#65a30d', // green
+        forest: '#166534',    // dark green
+        savanna: '#a3a3a3',   // light brown
+        shrubland: '#84cc16', // yellow-green
+        hills: '#a16207',     // brown
+        mountain: '#6b7280',  // gray
+        alpine: '#e5e7eb',    // light gray
+        taiga: '#14532d',     // dark green
+        tundra: '#d1d5db',    // light gray
+        desert: '#fbbf24'     // yellow
+      };
+      
+      // Unwalkable biomes
+      const UNWALKABLE_BIOMES = new Set(['ocean', 'mountain']);
+      
+      // Check if a world position is walkable
+      function isWalkable(worldX, worldY) {
+        if (!worldData || !worldData.world.biomeMap) return true; // Allow movement if no world data
+        
+        const tileX = Math.floor(worldX / 8);
+        const tileY = Math.floor(worldY / 8);
+        
+        if (tileX < 0 || tileY < 0 || tileX >= worldData.world.size || tileY >= worldData.world.size) {
+          return false; // Outside world bounds
+        }
+        
+        const biome = worldData.world.biomeMap[tileY] && worldData.world.biomeMap[tileY][tileX];
+        return !UNWALKABLE_BIOMES.has(biome);
+      }
+
+      const POI_COLORS = {
+        village: '#ef4444',        // red
+        ruined_castle: '#6b7280',  // gray
+        wizards_tower: '#8b5cf6', // purple
+        dark_cave: '#1f2937',     // dark gray
+        dragon_grounds: '#dc2626', // dark red
+        lighthouse: '#f59e0b',    // orange
+        ancient_circle: '#06b6d4' // cyan
+      };
+
+      function updateCamera() {
+        // Calculate player position relative to camera center
+        const playerScreenX = me.x - camera.x;
+        const playerScreenY = me.y - camera.y;
+        
+        // Check if player is outside the deadzone (scaled by zoom level)
+        let targetCameraX = camera.x;
+        let targetCameraY = camera.y;
+        
+        // Calculate zoom-adjusted deadzone size
+        const deadzoneWidth = BASE_DEADZONE_WIDTH / camera.zoom;
+        const deadzoneHeight = BASE_DEADZONE_HEIGHT / camera.zoom;
+        
+        // Horizontal deadzone check
+        if (playerScreenX < -deadzoneWidth / 2) {
+          targetCameraX = me.x + deadzoneWidth / 2;
+        } else if (playerScreenX > deadzoneWidth / 2) {
+          targetCameraX = me.x - deadzoneWidth / 2;
+        }
+        
+        // Vertical deadzone check
+        if (playerScreenY < -deadzoneHeight / 2) {
+          targetCameraY = me.y + deadzoneHeight / 2;
+        } else if (playerScreenY > deadzoneHeight / 2) {
+          targetCameraY = me.y - deadzoneHeight / 2;
+        }
+        
+        // Smooth camera movement
+        camera.x += (targetCameraX - camera.x) * CAMERA_SMOOTHING;
+        camera.y += (targetCameraY - camera.y) * CAMERA_SMOOTHING;
+      }
 
       function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // origin center
+        
+        // Update camera position
+        updateCamera();
+        
+        // Center of canvas (screen space)
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
-        // me is blue
-        ctx.fillStyle = '#2b6cb0';
-        ctx.fillRect(cx + me.x - 5, cy + me.y - 5, 10, 10);
-        // others are gray
-        ctx.fillStyle = '#718096';
-        for (const p of others.values()) {
-          ctx.fillRect(cx + p.position.x - 4, cy + p.position.y - 4, 8, 8);
+        
+        // Choose rendering mode based on game state
+        if (gameState.currentPOI) {
+          drawVillageInterior(cx, cy);
+        } else {
+          drawOverworld(cx, cy);
         }
+        
+        // Common UI elements (debug info, interaction prompts)
+        drawUI();
+        
+        // Draw minimap
+        drawMinimap();
+        
+        // Continue the rendering loop
         requestAnimationFrame(draw);
       }
-      requestAnimationFrame(draw);
+      
+      function drawOverworld(cx, cy) {
+        // Draw world tiles if we have world data
+        if (worldData && worldData.world.biomeMap) {
+          const baseTileSize = 8; // Base size of each biome tile in pixels
+          const tileSize = baseTileSize * camera.zoom; // Apply zoom to tile size
+          const biomeMap = worldData.world.biomeMap;
+          const worldSize = worldData.world.size;
+          
+          // Calculate which tiles to render based on camera position and zoom
+          const viewWidth = cx / camera.zoom;
+          const viewHeight = cy / camera.zoom;
+          const startX = Math.max(0, Math.floor((camera.x - viewWidth) / baseTileSize));
+          const endX = Math.min(worldSize, Math.floor((camera.x + viewWidth) / baseTileSize) + 1);
+          const startY = Math.max(0, Math.floor((camera.y - viewHeight) / baseTileSize));
+          const endY = Math.min(worldSize, Math.floor((camera.y + viewHeight) / baseTileSize) + 1);
+          
+          // Draw biome tiles
+          for (let worldY = startY; worldY < endY; worldY++) {
+            for (let worldX = startX; worldX < endX; worldX++) {
+              const biome = biomeMap[worldY] && biomeMap[worldY][worldX];
+              if (biome && BIOME_COLORS[biome]) {
+                const worldPosX = worldX * baseTileSize;
+                const worldPosY = worldY * baseTileSize;
+                const screenX = cx + (worldPosX - camera.x) * camera.zoom;
+                const screenY = cy + (worldPosY - camera.y) * camera.zoom;
+                
+                ctx.fillStyle = BIOME_COLORS[biome];
+                ctx.fillRect(screenX, screenY, tileSize, tileSize);
+              }
+            }
+          }
+          
+          // Draw POIs
+          if (worldData.world.pois) {
+            for (const poi of worldData.world.pois) {
+              const worldPosX = poi.position.x * baseTileSize;
+              const worldPosY = poi.position.y * baseTileSize;
+              const screenX = cx + (worldPosX - camera.x) * camera.zoom;
+              const screenY = cy + (worldPosY - camera.y) * camera.zoom;
+              
+              // Only draw if on screen
+              const poiSize = 6 * camera.zoom;
+              if (screenX > -20 && screenX < canvas.width + 20 && 
+                  screenY > -20 && screenY < canvas.height + 20) {
+                ctx.fillStyle = POI_COLORS[poi.type] || '#fff';
+                ctx.fillRect(screenX - poiSize/2, screenY - poiSize/2, poiSize, poiSize);
+                
+                // Draw POI name if discovered (scale font with zoom)
+                if (poi.discovered && camera.zoom >= 0.8) {
+                  ctx.fillStyle = '#fff';
+                  ctx.font = `${Math.max(8, 8 * camera.zoom)}px sans-serif`;
+                  ctx.textAlign = 'center';
+                  ctx.fillText(poi.name, screenX, screenY - poiSize/2 - 4);
+                }
+              }
+            }
+          }
+          
+          // Draw rivers
+          if (worldData.world.rivers) {
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = Math.max(1, 2 * camera.zoom);
+            for (const river of worldData.world.rivers) {
+              if (river.points.length > 1) {
+                ctx.beginPath();
+                for (let i = 0; i < river.points.length; i++) {
+                  const point = river.points[i];
+                  const worldPosX = point.x * baseTileSize;
+                  const worldPosY = point.y * baseTileSize;
+                  const screenX = cx + (worldPosX - camera.x) * camera.zoom;
+                  const screenY = cy + (worldPosY - camera.y) * camera.zoom;
+                  if (i === 0) {
+                    ctx.moveTo(screenX, screenY);
+                  } else {
+                    ctx.lineTo(screenX, screenY);
+                  }
+                }
+                ctx.stroke();
+              }
+            }
+          }
+        } else {
+          // Fallback: draw simple grid if no world data
+          ctx.strokeStyle = '#222';
+          ctx.lineWidth = 1;
+          const gridSize = 32;
+          
+          const gridOffsetX = -camera.x % gridSize;
+          const gridOffsetY = -camera.y % gridSize;
+          
+          for (let x = gridOffsetX; x < canvas.width; x += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+          }
+          for (let y = gridOffsetY; y < canvas.height; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+          }
+        }
+        
+        // Draw other players (with camera offset and zoom)
+        ctx.fillStyle = '#718096';
+        for (const p of others.values()) {
+          const screenX = cx + (p.position.x - camera.x) * camera.zoom;
+          const screenY = cy + (p.position.y - camera.y) * camera.zoom;
+          
+          // Only draw if on screen
+          const playerSize = 12 * camera.zoom;
+          if (screenX > -20 && screenX < canvas.width + 20 && 
+              screenY > -20 && screenY < canvas.height + 20) {
+            ctx.fillRect(screenX - playerSize/2, screenY - playerSize/2, playerSize, playerSize);
+            // Draw name (only if zoomed in enough)
+            if (camera.zoom >= 0.7) {
+              ctx.fillStyle = '#aaa';
+              ctx.font = `${Math.max(8, 10 * camera.zoom)}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.fillText(p.name || p.userId, screenX, screenY - playerSize/2 - 4);
+              ctx.fillStyle = '#718096';
+            }
+          }
+        }
+        
+        // Draw player (always at center when camera is following)
+        const playerScreenX = cx + (me.x - camera.x) * camera.zoom;
+        const playerScreenY = cy + (me.y - camera.y) * camera.zoom;
+        
+        const myPlayerSize = 16 * camera.zoom;
+        ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(playerScreenX - myPlayerSize/2, playerScreenY - myPlayerSize/2, myPlayerSize, myPlayerSize);
+        
+        // Draw player label
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.max(10, 12 * camera.zoom)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('You', playerScreenX, playerScreenY - myPlayerSize/2 - 4);
+      }
+      
+      function drawVillageInterior(cx, cy) {
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (!interior) return;
+        
+        // Village interior rendering
+        const tileSize = 16 * camera.zoom; // Larger tiles for interior
+        
+        // Calculate visible area
+        const viewWidth = cx / camera.zoom;
+        const viewHeight = cy / camera.zoom;
+        const startX = Math.max(0, Math.floor((camera.x - viewWidth) / 16));
+        const endX = Math.min(interior.width - 1, Math.ceil((camera.x + viewWidth) / 16));
+        const startY = Math.max(0, Math.floor((camera.y - viewHeight) / 16));
+        const endY = Math.min(interior.height - 1, Math.ceil((camera.y + viewHeight) / 16));
+        
+        // Draw interior tiles
+        for (let y = startY; y <= endY; y++) {
+          for (let x = startX; x <= endX; x++) {
+            const cell = interior.layout[y][x];
+            const screenX = cx + (x * 16 - camera.x) * camera.zoom;
+            const screenY = cy + (y * 16 - camera.y) * camera.zoom;
+            
+            // Draw cell based on type
+            ctx.fillStyle = getCellColor(cell.type);
+            ctx.fillRect(screenX, screenY, tileSize, tileSize);
+            
+            // Draw walls/doors with borders
+            if (cell.type === 'wall') {
+              ctx.strokeStyle = '#000';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(screenX, screenY, tileSize, tileSize);
+            } else if (cell.type === 'door') {
+              ctx.strokeStyle = '#8B4513';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(screenX, screenY, tileSize, tileSize);
+            }
+          }
+        }
+        
+        // Draw entities (NPCs)
+        if (interior.entities) {
+          for (const entity of interior.entities) {
+            const screenX = cx + (entity.position.x * 16 - camera.x) * camera.zoom;
+            const screenY = cy + (entity.position.y * 16 - camera.y) * camera.zoom;
+            const entitySize = 12 * camera.zoom;
+            
+            // Draw NPC
+            ctx.fillStyle = getEntityColor(entity.type);
+            ctx.fillRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
+            
+            // Draw name if zoomed in
+            if (camera.zoom >= 0.8) {
+              ctx.fillStyle = '#fff';
+              ctx.font = `${Math.max(10, 12 * camera.zoom)}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.fillText(entity.name, screenX, screenY - entitySize/2 - 4);
+            }
+          }
+        }
+        
+        // Draw player in interior
+        const playerSize = 12 * camera.zoom;
+        ctx.fillStyle = '#4a90e2'; // Blue player
+        ctx.fillRect(cx - playerSize/2, cy - playerSize/2, playerSize, playerSize);
+      }
+      
+      function getCellColor(cellType) {
+        const colors = {
+          grass: '#65a30d',    // green
+          road: '#92400e',     // brown
+          house: '#374151',    // dark gray  
+          tavern: '#7c2d12',   // dark brown
+          shop: '#1e40af',     // blue
+          entrance: '#eab308', // yellow
+          door: '#8B4513',     // saddle brown
+          wall: '#6b7280',     // gray
+          floor: '#d1d5db'     // light gray
+        };
+        return colors[cellType] || '#000';
+      }
+      
+      function getEntityColor(entityType) {
+        const colors = {
+          villager: '#10b981',   // green
+          merchant: '#f59e0b',   // orange
+          guard: '#dc2626'       // red
+        };
+        return colors[entityType] || '#6b7280';
+      }
+      
+      function drawUI() {
+        // Debug info
+        ctx.fillStyle = '#666';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`World: ${Math.round(me.x)}, ${Math.round(me.y)}`, 10, 20);
+        ctx.fillText(`Camera: ${Math.round(camera.x)}, ${Math.round(camera.y)}`, 10, 35);
+        ctx.fillText(`Zoom: ${camera.zoom.toFixed(1)}x`, 10, 50);
+        
+        if (gameState.currentPOI) {
+          ctx.fillText(`Location: Village Interior`, 10, 65);
+        } else {
+          // Show current biome if available
+          if (worldData && worldData.world.biomeMap) {
+            const tileX = Math.floor(me.x / 8);
+            const tileY = Math.floor(me.y / 8);
+            const biome = worldData.world.biomeMap[tileY] && worldData.world.biomeMap[tileY][tileX];
+            if (biome) {
+              ctx.fillText(`Biome: ${biome}`, 10, 65);
+            }
+          }
+        }
+        
+        // Show interaction prompts
+        gameState.nearbyPOI = findNearbyPOI();
+        if (gameState.nearbyPOI && gameState.nearbyPOI.type === 'village' && !gameState.currentPOI) {
+          ctx.fillStyle = '#ffff00';
+          ctx.font = '14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
+        } else if (gameState.currentPOI) {
+          ctx.fillStyle = '#ffff00';
+          ctx.font = '14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Press SPACE to exit village', canvas.width / 2, canvas.height - 80);
+        }
+      }
+      
+      function drawMinimap() {
+        if (minimapState === 'hidden' || !worldData || !worldData.world.biomeMap) return;
+        
+        minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+        
+        const biomeMap = worldData.world.biomeMap;
+        const worldSize = worldData.world.size;
+        const canvasWidth = minimapCanvas.width;
+        const canvasHeight = minimapCanvas.height;
+        
+        // Calculate scale to fit world in minimap
+        const scale = Math.min(canvasWidth / worldSize, canvasHeight / worldSize);
+        const offsetX = (canvasWidth - worldSize * scale) / 2;
+        const offsetY = (canvasHeight - worldSize * scale) / 2;
+        
+        // Draw biome tiles (sample every few tiles for performance)
+        const step = minimapState === 'fullscreen' ? 2 : 4;
+        for (let y = 0; y < worldSize; y += step) {
+          for (let x = 0; x < worldSize; x += step) {
+            const biome = biomeMap[y] && biomeMap[y][x];
+            if (biome && BIOME_COLORS[biome]) {
+              minimapCtx.fillStyle = BIOME_COLORS[biome];
+              const pixelX = offsetX + x * scale;
+              const pixelY = offsetY + y * scale;
+              const pixelSize = Math.max(1, scale * step);
+              minimapCtx.fillRect(pixelX, pixelY, pixelSize, pixelSize);
+            }
+          }
+        }
+        
+        // Draw POIs
+        if (worldData.world.pois) {
+          for (const poi of worldData.world.pois) {
+            const pixelX = offsetX + poi.position.x * scale;
+            const pixelY = offsetY + poi.position.y * scale;
+            
+            minimapCtx.fillStyle = POI_COLORS[poi.type] || '#fff';
+            const poiSize = minimapState === 'fullscreen' ? 6 : 3;
+            minimapCtx.fillRect(pixelX - poiSize/2, pixelY - poiSize/2, poiSize, poiSize);
+            
+            // Draw POI outline
+            minimapCtx.strokeStyle = '#000';
+            minimapCtx.lineWidth = 1;
+            minimapCtx.strokeRect(pixelX - poiSize/2, pixelY - poiSize/2, poiSize, poiSize);
+          }
+        }
+        
+        // Draw rivers
+        if (worldData.world.rivers) {
+          minimapCtx.strokeStyle = '#3b82f6';
+          minimapCtx.lineWidth = minimapState === 'fullscreen' ? 2 : 1;
+          for (const river of worldData.world.rivers) {
+            if (river.points.length > 1) {
+              minimapCtx.beginPath();
+              for (let i = 0; i < river.points.length; i++) {
+                const point = river.points[i];
+                const pixelX = offsetX + point.x * scale;
+                const pixelY = offsetY + point.y * scale;
+                if (i === 0) {
+                  minimapCtx.moveTo(pixelX, pixelY);
+                } else {
+                  minimapCtx.lineTo(pixelX, pixelY);
+                }
+              }
+              minimapCtx.stroke();
+            }
+          }
+        }
+        
+        // Draw other players
+        for (const p of others.values()) {
+          const pixelX = offsetX + (p.position.x / 8) * scale;
+          const pixelY = offsetY + (p.position.y / 8) * scale;
+          
+          minimapCtx.fillStyle = '#718096';
+          const playerSize = minimapState === 'fullscreen' ? 4 : 2;
+          minimapCtx.fillRect(pixelX - playerSize/2, pixelY - playerSize/2, playerSize, playerSize);
+        }
+        
+        // Draw player position
+        const playerPixelX = offsetX + (me.x / 8) * scale;
+        const playerPixelY = offsetY + (me.y / 8) * scale;
+        
+        // Player dot
+        minimapCtx.fillStyle = '#3b82f6';
+        const playerSize = minimapState === 'fullscreen' ? 6 : 3;
+        minimapCtx.fillRect(playerPixelX - playerSize/2, playerPixelY - playerSize/2, playerSize, playerSize);
+        
+        // Player outline
+        minimapCtx.strokeStyle = '#fff';
+        minimapCtx.lineWidth = 1;
+        minimapCtx.strokeRect(playerPixelX - playerSize/2, playerPixelY - playerSize/2, playerSize, playerSize);
+        
+        // Draw view area indicator
+        if (minimapState === 'fullscreen') {
+          const viewWidth = canvas.width / 8 * scale;
+          const viewHeight = canvas.height / 8 * scale;
+          
+          minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          minimapCtx.lineWidth = 2;
+          minimapCtx.strokeRect(
+            playerPixelX - viewWidth/2,
+            playerPixelY - viewHeight/2,
+            viewWidth,
+            viewHeight
+          );
+        }
+      }
+      
+      // POI interaction functions
+      function findNearbyPOI() {
+        if (!worldData || !worldData.world.pois) return null;
+        
+        const INTERACTION_DISTANCE = 24; // pixels (3 tiles * 8 pixels)
+        let closest = null;
+        let closestDistance = Infinity;
+        
+        for (const poi of worldData.world.pois) {
+          const poiPixelX = poi.position.x * 8;
+          const poiPixelY = poi.position.y * 8;
+          const distance = Math.sqrt(
+            Math.pow(me.x - poiPixelX, 2) + Math.pow(me.y - poiPixelY, 2)
+          );
+          
+          if (distance <= INTERACTION_DISTANCE && distance < closestDistance) {
+            closest = poi;
+            closestDistance = distance;
+          }
+        }
+        
+        return closest;
+      }
+      
+      function handlePOIInteraction() {
+        if (gameState.currentPOI) {
+          // We're inside a POI - exit to overworld
+          exitPOI();
+        } else {
+          // We're in overworld - try to enter nearby POI
+          const nearbyPOI = findNearbyPOI();
+          if (nearbyPOI && nearbyPOI.type === 'village') {
+            enterVillage(nearbyPOI);
+          }
+        }
+      }
+      
+      function enterVillage(poi) {
+        log('[SYSTEM] Entering ' + poi.name + '...');
+        
+        // Check if we have cached interior
+        const cached = gameState.poiInteriors.get(poi.id);
+        if (cached) {
+          // Use cached interior
+          transitionToInterior(poi, cached);
+        } else {
+          // Request interior generation from server
+          socket.emit('enter-poi', { poiId: poi.id });
+        }
+      }
+      
+      function exitPOI() {
+        log('[SYSTEM] Leaving village...');
+        gameState.currentPOI = null;
+        // Player position will be restored to overworld position
+      }
+      
+      function transitionToInterior(poi, interior) {
+        gameState.currentPOI = poi.id;
+        // Set player to village entrance
+        me.x = interior.entrance.x * 8; // Convert grid to pixels
+        me.y = interior.entrance.y * 8;
+        camera.x = me.x;
+        camera.y = me.y;
+      }
+      
+      // Movement setup - Initialize once, outside of socket setup
+      const speed = 400; // px per second (increased for better visibility)
+      let keys = new Set();
+      
+      window.onkeydown = (e) => {
+        // Don't capture keys when typing in chat
+        if (e.target.id === 'chat') return;
+        
+        // Handle spacebar for POI interaction
+        if (e.key === ' ' || e.key === 'Space') {
+          e.preventDefault();
+          handlePOIInteraction();
+          return;
+        }
+        
+        keys.add(e.key.toLowerCase());
+      };
+      
+      window.onkeyup = (e) => {
+        keys.delete(e.key.toLowerCase());
+      };
+      
+      // Movement tick loop
+      let last = performance.now();
+      function tick(t) {
+        const dt = (t - last) / 1000;
+        last = t;
+        
+        let dx = 0, dy = 0;
+        if (keys.has('arrowup') || keys.has('w')) dy -= speed * dt;
+        if (keys.has('arrowdown') || keys.has('s')) dy += speed * dt;
+        if (keys.has('arrowleft') || keys.has('a')) dx -= speed * dt;
+        if (keys.has('arrowright') || keys.has('d')) dx += speed * dt;
+        
+        if ((dx || dy) && socket) {
+          // Calculate new position
+          const newX = me.x + dx;
+          const newY = me.y + dy;
+          
+          // Check if the new position is walkable
+          if (isWalkable(newX, newY)) {
+            me.x = newX;
+            me.y = newY;
+            socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+          } else {
+            // Try moving only in one direction if diagonal movement is blocked
+            if (isWalkable(me.x + dx, me.y)) {
+              me.x += dx;
+              socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+            } else if (isWalkable(me.x, me.y + dy)) {
+              me.y += dy;
+              socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+            }
+            // If neither direction works, no movement occurs
+          }
+        }
+        
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
 
       function setupSocket(seed) {
         if (socket) socket.disconnect();
         socket = io(`/world/${encodeURIComponent(seed)}`, { transports: ['websocket'], auth: {} });
         const status = document.getElementById('status');
-        socket.on('connect', () => { status.textContent = 'connected'; log('connected'); });
-        socket.on('disconnect', (r) => { status.textContent = 'disconnected'; log('disconnected: ' + r); });
-        socket.on('welcome', (data) => { me.x = data.you.position.x; me.y = data.you.position.y; log('welcome'); });
-        socket.on('player-moved', (list) => {
-          // list of {userId, name, position}
-          others.clear();
-          for (const p of list) others.set(p.userId, p);
+        
+        socket.on('connect', () => { 
+          status.textContent = 'connected';
+          status.className = 'connected';
+          log('[SYSTEM] Connected to world: ' + seed);
         });
-        socket.on('chat-message', (m) => log(`[${m.channel}] ${m.from.name||m.from.userId}: ${m.message}`));
-        socket.on('chunk-state', (st) => log(`chunk-state ${st.chunkId} pois=${st.pois.length} npcs=${st.npcs.length}`));
-        socket.on('poi-interaction', (p) => log(`poi-interaction ${p.poiId} ${JSON.stringify(p.result||p.error)}`));
-        socket.on('breed-result', (r) => log(`breed-result ${r.poiId} ${JSON.stringify(r.offspring||r.error)}`));
-
-        // Movement with arrow/WASD
-        const speed = 100; // px per second
-        let keys = new Set();
-        window.onkeydown = (e) => keys.add(e.key.toLowerCase());
-        window.onkeyup = (e) => keys.delete(e.key.toLowerCase());
-        let last = performance.now();
-        function tick(t) {
-          const dt = (t - last) / 1000; last = t;
-          let dx = 0, dy = 0;
-          if (keys.has('arrowup') || keys.has('w')) dy -= speed * dt;
-          if (keys.has('arrowdown') || keys.has('s')) dy += speed * dt;
-          if (keys.has('arrowleft') || keys.has('a')) dx -= speed * dt;
-          if (keys.has('arrowright') || keys.has('d')) dx += speed * dt;
-          if (dx || dy) {
-            me.x += dx; me.y += dy;
-            socket.emit('move-player', { x: me.x, y: me.y, t: Date.now() });
+        
+        socket.on('disconnect', (r) => { 
+          status.textContent = 'disconnected';
+          status.className = '';
+          log('[SYSTEM] Disconnected: ' + r);
+        });
+        
+        socket.on('welcome', (data) => { 
+          me.x = data.you.position.x;
+          me.y = data.you.position.y;
+          me.userId = data.you.userId;
+          
+          // Set camera to spawn point
+          camera.x = me.x;
+          camera.y = me.y;
+          
+          const tileX = Math.floor(me.x / 8);
+          const tileY = Math.floor(me.y / 8);
+          const biome = worldData && worldData.world.biomeMap[tileY] && worldData.world.biomeMap[tileY][tileX];
+          log('[SYSTEM] Welcome! Starting position: ' + Math.round(me.x) + ', ' + Math.round(me.y) + (biome ? ' (' + biome + ')' : ''));
+        });
+        
+        socket.on('player-moved', (list) => {
+          others.clear();
+          for (const p of list) {
+            // Don't add ourselves to the others list
+            if (p.userId !== me.userId) {
+              others.set(p.userId, p);
+            }
           }
-          requestAnimationFrame(tick);
-        }
-        requestAnimationFrame(tick);
+        });
+        
+        socket.on('chat-message', (m) => {
+          log(`[${m.channel.toUpperCase()}] ${m.from.name || m.from.userId}: ${m.message}`);
+        });
+        
+        // POI interior responses
+        socket.on('poi-interior', (data) => {
+          const { poiId, interior } = data;
+          // Cache the interior
+          gameState.poiInteriors.set(poiId, interior);
+          // Find the POI for transition
+          const poi = worldData.world.pois.find(p => p.id === poiId);
+          if (poi) {
+            transitionToInterior(poi, interior);
+          }
+        });
+        
+        socket.on('poi-entry-error', (data) => {
+          log(`[ERROR] Could not enter POI: ${data.error}`);
+        });
+        
+        socket.on('chunk-state', (st) => {
+          log(`[CHUNK] Entered ${st.chunkId} (POIs: ${st.pois.length}, NPCs: ${st.npcs.length})`);
+        });
+        
+        socket.on('poi-interaction', (p) => {
+          log(`[POI] Interaction with ${p.poiId}: ${JSON.stringify(p.result || p.error)}`);
+        });
+        
+        socket.on('breed-result', (r) => {
+          log(`[BREED] Result at ${r.poiId}: ${JSON.stringify(r.offspring || r.error)}`);
+        });
       }
 
-      document.getElementById('connect').onclick = () => {
+      // Connect button
+      document.getElementById('connect').onclick = async () => {
         const seed = document.getElementById('seed').value || 'alpha';
+        
+        // Load world data first
+        try {
+          log('[SYSTEM] Loading world data...');
+          const response = await fetch(`/worlds/${encodeURIComponent(seed)}/manifest`);
+          worldData = await response.json();
+          log(`[SYSTEM] Loaded world: ${worldData.world.size}x${worldData.world.size}`);
+        } catch (error) {
+          log('[ERROR] Failed to load world data: ' + error.message);
+        }
+        
         setupSocket(seed);
+        
+        // Start rendering loop
+        requestAnimationFrame(draw);
       };
 
+      // Chat input
       document.getElementById('chat').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && socket && e.target.value.trim()) {
-          socket.emit('chat-message', { channel: document.getElementById('channel').value, message: e.target.value.trim() });
+          const channel = document.getElementById('channel').value;
+          const message = e.target.value.trim();
+          socket.emit('chat-message', { channel, message });
+          log(`[${channel.toUpperCase()}] You: ${message}`);
           e.target.value = '';
         }
       });
 
+      // Debug buttons
       document.getElementById('interact').onclick = () => {
-        if (!socket) return;
-        // demo: interact with a deterministic local poi id
+        if (!socket) {
+          log('[ERROR] Not connected');
+          return;
+        }
         const poiId = 'poi:0:0:0:0';
         socket.emit('interact-poi', { poiId, action: 'discover' });
+        log('[ACTION] Interacting with POI: ' + poiId);
       };
+      
       document.getElementById('breed').onclick = () => {
-        if (!socket) return;
+        if (!socket) {
+          log('[ERROR] Not connected');
+          return;
+        }
         const poiId = 'poi:0:0:1:0';
         socket.emit('breed-request', { poiId, parentAId: 'a1', parentBId: 'b2' });
+        log('[ACTION] Breeding request at: ' + poiId);
       };
+      
+      // Hide controls hint after first movement
+      let controlsShown = true;
+      window.addEventListener('keydown', (e) => {
+        if (controlsShown && ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
+          document.getElementById('controls').style.opacity = '0';
+          setTimeout(() => {
+            document.getElementById('controls').style.display = 'none';
+          }, 300);
+          controlsShown = false;
+        }
+      });
     </script>
   </body>
-  </html>
+</html>

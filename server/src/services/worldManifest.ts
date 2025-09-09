@@ -1,28 +1,39 @@
-import crypto from 'crypto';
+import { WorldGenerator } from '../procgen/worldGenerator.js';
+
+// Cache for generated worlds
+const worldCache = new Map<string, any>();
 
 export function manifestForSeed(seed: string) {
-  const h = crypto.createHash('sha256').update(seed).digest('hex');
-  const biomeIndex = parseInt(h.slice(0, 2), 16) % 5; // 5 biomes for demo
-  const biomes = ['forest', 'desert', 'tundra', 'swamp', 'highlands'];
-  const chunkSize = 64;
-  const typePool = ['village', 'breeding_center', 'market', 'ruins'];
-  const poiTemplates = Array.from({ length: 8 }).map((_, i) => {
-    const type = typePool[(parseInt(h.slice(2 + i, 4 + i), 16) + i) % typePool.length];
-    return {
-      id: `${i}`,
-      type,
-      hash: crypto.createHash('sha1').update(`${seed}:${type}:${i}`).digest('hex'),
-    };
-  });
-  return {
+  if (worldCache.has(seed)) {
+    return worldCache.get(seed);
+  }
+
+  console.log(`Generating world for seed: ${seed}`);
+  const generator = new WorldGenerator(seed);
+  const world = generator.generate();
+  
+  const manifest = {
     seed,
     version: 1,
-    chunkSize,
+    chunkSize: 64,
     world: {
-      biome: biomes[biomeIndex],
-      poiTemplates,
-      npcTemplateHash: crypto.createHash('sha1').update(`${seed}:npcTemplates:v1`).digest('hex'),
-    },
+      size: world.size,
+      spawnPoint: world.spawnPoint,
+      biomeMap: world.biomeMap,
+      heightMap: world.heightMap,
+      pois: world.pois.map(poi => ({
+        id: poi.id,
+        type: poi.type,
+        position: poi.position,
+        name: poi.name,
+        discovered: poi.discovered
+      })),
+      rivers: world.rivers
+    }
   };
+
+  // Cache the manifest
+  worldCache.set(seed, manifest);
+  return manifest;
 }
 
