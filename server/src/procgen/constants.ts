@@ -72,6 +72,7 @@ export interface POIInterior {
   entities: Array<{
     id: string;
     type: string;
+    name?: string;
     position: Vector2;
     state: any;
   }>;

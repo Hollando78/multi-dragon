@@ -19,6 +19,7 @@ import { generateVillageInterior } from '../procgen/villageInterior.js';
 import { generateDarkCave } from '../procgen/caveInterior.js';
 import { generateRuinedCastle } from '../procgen/ruinedCastleInterior.js';
 import { generateWizardsTower } from '../procgen/wizardsTowerInterior.js';
+import { getRedis } from '../services/redis.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
 
@@ -123,8 +124,12 @@ export function attachWorldNamespace(io: Namespace) {
         newY = data.y;
       }
       
-      // Validate movement with collision detection
-      const validatedPosition = validateMovement(prev.position.x, prev.position.y, newX, newY, seed);
+      // Validate movement with collision detection (allow dev testing override)
+      const testing = (socket.data as any).testing || {};
+      const ignoreTerrain = config.env !== 'production' && testing.ignoreTerrain === true;
+      const validatedPosition = ignoreTerrain
+        ? { x: newX, y: newY }
+        : validateMovement(prev.position.x, prev.position.y, newX, newY, seed);
       prev.position.x = validatedPosition.x;
       prev.position.y = validatedPosition.y;
       prev.lastUpdate = now;
@@ -144,6 +149,13 @@ export function attachWorldNamespace(io: Namespace) {
           sendChunkState(seed, newChunk, socket);
         }
       }
+    });
+
+    // Testing flags (dev only)
+    socket.on('testing-flags', (flags: { ignoreTerrain?: boolean }) => {
+      if (config.env === 'production') return;
+      (socket.data as any).testing = { ...(socket.data as any).testing, ...flags };
+      logger.info({ userId, flags }, 'testing_flags_updated');
     });
 
     socket.on('chat-message', async (msg: ChatMessage) => {
@@ -195,6 +207,21 @@ export function attachWorldNamespace(io: Namespace) {
       }
       wsConnections.dec({ namespace: socket.nsp.name });
       logger.info({ userId, reason }, 'player_disconnected');
+    });
+
+    // Developer: force regenerate a POI interior by clearing cache
+    socket.on('regenerate-poi', async ({ poiId }: { poiId: string }) => {
+      if (config.env === 'production') return; // safety: dev only
+      if (!(await wsRateLimit(userId, 'regenerate-poi', 5, 10))) return;
+      try {
+        const redis = await getRedis();
+        if (redis) {
+          await redis.del(`world:${seed}:poi:${poiId}:interior`);
+        }
+        socket.emit('poi-regenerated', { poiId, ok: true });
+      } catch (e) {
+        socket.emit('poi-regenerated', { poiId, ok: false, error: 'error' });
+      }
     });
 
     // POI interaction: basic lock + mutate + broadcast

@@ -61,6 +61,14 @@ export function generateVillageInterior(poiId: string, seed: string, rarity: 'co
 
   const entities: VillageEntity[] = [];
 
+  // Simple name generation for unique-feeling NPCs per village
+  const FIRST_NAMES = ['Aldric', 'Brina', 'Cedric', 'Daria', 'Edwin', 'Fiora', 'Garrick', 'Helena', 'Ilia', 'Joran', 'Kael', 'Lina', 'Marek', 'Nadia', 'Orin', 'Petra', 'Quinn', 'Rhea', 'Soren', 'Tess', 'Ulric', 'Vera', 'Willem', 'Yara', 'Zane'];
+  const LAST_NAMES = ['Oakheart', 'Stonebrook', 'Rivers', 'Greenfield', 'Ashdown', 'Hawthorne', 'Brightwood', 'Ironford', 'Ravenhill', 'Stormwatch', 'Fairbairn', 'Meadows', 'Hillcrest', 'Longfellow'];
+  const TAVERN_TITLES = ['Innkeeper', 'Host', 'Barkeep', 'Tavernmaster'];
+  const MERCHANT_TITLES = ['Trader', 'Merchant', 'Shopkeeper', 'Peddler'];
+  const pick = <T,>(arr: T[]) => arr[rng.randomInt(0, arr.length - 1)];
+  const fullName = () => `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`;
+
   // Place buildings near roads
   const baseHouse = 4;
   const houseCount = rarity === 'legendary' ? baseHouse + 6 : rarity === 'epic' ? baseHouse + 4 : rarity === 'rare' ? baseHouse + 2 : baseHouse;
@@ -76,48 +84,68 @@ export function generateVillageInterior(poiId: string, seed: string, rarity: 'co
       if (building) {
         // Add NPC for tavern and shop
         if (config.type === 'tavern') {
+          const tName = `${pick(TAVERN_TITLES)} ${fullName()}`;
+          const lines = [
+            'Welcome, traveler! Warm fire and good ale await.',
+            'Rooms upstairs if you need rest.',
+            'Watch the roads at night—wolves have been seen.'
+          ];
           entities.push({
             id: rng.generateUUID('tavern-keeper'),
             type: 'merchant',
             position: { x: building.x + 1, y: building.y + 1 },
-            name: 'Innkeeper Barliman',
+            name: tName,
             role: 'tavern_keeper',
-            dialogue: [
-              "Welcome to the Prancing Pony!",
-              "Would you like a room for the night?",
-              "The ale here is the finest in the village!"
-            ]
+            dialogue: rng.shuffle(lines).slice(0, 3)
           });
         } else if (config.type === 'shop') {
+          const sName = `${pick(MERCHANT_TITLES)} ${fullName()}`;
+          const lines = [
+            'Fresh supplies and fair prices!',
+            'Looking for something special?',
+            'Coin on the counter, friend.'
+          ];
           entities.push({
             id: rng.generateUUID('shopkeeper'),
             type: 'merchant',
             position: { x: building.x + 1, y: building.y + 1 },
-            name: 'Merchant Took',
+            name: sName,
             role: 'shopkeeper',
-            dialogue: [
-              "Welcome to my shop!",
-              "I have the finest goods this side of the mountains.",
-              "What can I get for you today?"
-            ]
+            dialogue: rng.shuffle(lines).slice(0, 3)
           });
-        } else if (config.type === 'house' && i === 0) {
-          // Add a villager to the first house
-          entities.push({
-            id: rng.generateUUID('villager-' + i),
-            type: 'villager',
-            position: { x: building.x + 1, y: building.y + 1 },
-            name: 'Villager ' + rng.randomElement(['Tom', 'Mary', 'John', 'Sarah', 'Bob']),
-            role: 'villager',
-            dialogue: [
-              "Hello, traveler!",
-              "Welcome to Haven Village.",
-              "The weather has been quite lovely lately."
-            ]
-          });
+        } else if (config.type === 'house') {
+          // Spawn 0-2 villagers per house with unique names
+          const villagerCount = rng.randomInt(0, 2);
+          for (let v = 0; v < villagerCount; v++) {
+            entities.push({
+              id: rng.generateUUID('villager-' + i + '-' + v),
+              type: 'villager',
+              position: { x: building.x + 1 + (v % 2), y: building.y + 1 },
+              name: fullName(),
+              role: 'villager',
+              dialogue: rng.shuffle([
+                'Lovely day, isn’t it?',
+                'Have you visited the market?',
+                'Mind the well, it’s deep.'
+              ]).slice(0, 2)
+            });
+          }
         }
       }
     }
+  }
+
+  // Occasional village guards near the crossroads for flavor
+  const guardCount = rng.randomInt(0, 2);
+  for (let g = 0; g < guardCount; g++) {
+    entities.push({
+      id: rng.generateUUID('guard-' + g),
+      type: 'guard',
+      position: { x: roadX + (g === 0 ? -2 : 2), y: roadY },
+      name: fullName(),
+      role: 'guard',
+      dialogue: ['Stay safe, citizen.']
+    });
   }
 
   return {

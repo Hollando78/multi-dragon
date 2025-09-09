@@ -7,7 +7,7 @@ type Cell = { type: CellType; walkable: boolean; sprite?: string };
 
 interface TowerFloor {
   layout: Cell[][];
-  entities: Array<{ id: string; type: string; position: { x: number; y: number }; state: any }>;
+  entities: Array<{ id: string; type: string; name?: string; position: { x: number; y: number }; state: any }>;
   containers: Array<{ id: string; position: { x: number; y: number }; opened: boolean; items: any[] }>;
   entrance?: { x: number; y: number };
   stairsUp?: { x: number; y: number };
@@ -73,14 +73,14 @@ export function generateWizardsTower(poiId: string, seed: string, rarity: Rarity
     const entities: TowerFloor['entities'] = [];
     const extraAdept = rarity === 'legendary' ? 2 : rarity === 'epic' ? 1 : 0;
     if (level === floorsCount - 1) {
-      entities.push({ id: `wizard-${level}`, type: 'guard', position: { x: cx, y: cy - 1 }, state: { title: 'Archmage' } });
+      entities.push({ id: `wizard-${level}`, type: 'archmage', name: 'Archmage', position: { x: cx, y: cy - 1 }, state: { title: 'Archmage' } });
       for (let i = 0; i < extraAdept; i++) {
-        entities.push({ id: `adept-top-${i}`, type: 'villager', position: { x: cx + i - 1, y: cy + 1 }, state: { role: 'adept' } });
+        entities.push({ id: `adept-top-${i}`, type: 'adept', name: 'Adept', position: { x: cx + i - 1, y: cy + 1 }, state: { role: 'adept' } });
       }
     } else if (level > 0) {
-      entities.push({ id: `adept-${level}`, type: 'villager', position: { x: cx - 1, y: cy + 1 }, state: { role: 'adept' } });
+      entities.push({ id: `adept-${level}`, type: 'adept', name: 'Adept', position: { x: cx - 1, y: cy + 1 }, state: { role: 'adept' } });
       if (extraAdept > 0 && rng.random() < 0.5) {
-        entities.push({ id: `adept2-${level}`, type: 'villager', position: { x: cx + 1, y: cy }, state: { role: 'adept' } });
+        entities.push({ id: `adept2-${level}`, type: 'adept', name: 'Adept', position: { x: cx + 1, y: cy }, state: { role: 'adept' } });
       }
     }
 

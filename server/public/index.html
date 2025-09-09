@@ -333,6 +333,8 @@
       <div id="debugControls">
         <button id="interact">Interact POI</button>
         <button id="breed">Breed Demo</button>
+        <button id="ignoreTerrainBtn">Ignore Terrain: Off</button>
+        <button id="regenPoi">Regenerate POI</button>
       </div>
       
       <!-- Movement controls hint -->
@@ -368,6 +370,7 @@ Click "Connect" to join world "alpha"
       const others = new Map();
       let worldData = null;
       let minimapState = 'normal'; // 'hidden', 'normal', 'fullscreen'
+      let ignoreTerrain = false; // testing toggle
       
       // Game state management
       let gameState = {
@@ -569,6 +572,7 @@ Click "Connect" to join world "alpha"
         
         // Handle overworld movement
         if (!worldData || !worldData.world.biomeMap) return true; // Allow movement if no world data
+        if (ignoreTerrain) return true; // Testing override: ignore terrain in overworld
         
         const tileX = Math.floor(x / 8);
         const tileY = Math.floor(y / 8);
@@ -881,7 +885,7 @@ Click "Connect" to join world "alpha"
               ctx.fillStyle = '#fff';
               ctx.font = `${Math.max(10, 12 * camera.zoom)}px sans-serif`;
               ctx.textAlign = 'center';
-              ctx.fillText(entity.name, screenX, screenY - entitySize/2 - 4);
+              ctx.fillText(getEntityLabel(entity), screenX, screenY - entitySize/2 - 4);
             }
           }
         }
@@ -919,11 +923,31 @@ Click "Connect" to join world "alpha"
           villager: '#10b981',   // green
           merchant: '#f59e0b',   // orange
           guard: '#dc2626',      // red
+          archmage: '#8b5cf6',   // purple
+          adept: '#22d3ee',      // cyan
           dragon_egg: '#f59e0b', // golden egg
           bat: '#6b7280',        // gray bat
           slime: '#22c55e'       // green slime
         };
         return colors[entityType] || '#6b7280';
+      }
+
+      function getEntityLabel(entity) {
+        if (entity && entity.name) return entity.name;
+        const map = {
+          villager: 'Villager',
+          merchant: 'Merchant',
+          guard: 'Guard',
+          archmage: 'Archmage',
+          adept: 'Adept',
+          dragon_egg: 'Dragon Egg',
+          bat: 'Bat',
+          slime: 'Slime'
+        };
+        const t = entity && entity.type;
+        if (t && map[t]) return map[t];
+        if (t) return String(t).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        return 'Entity';
       }
       
       function drawUI() {
@@ -937,10 +961,18 @@ Click "Connect" to join world "alpha"
         
         if (gameState.currentPOI) {
           const currentInterior = gameState.poiInteriors.get(gameState.currentPOI);
-          if (currentInterior && currentInterior.type === 'dark_cave') {
-            ctx.fillText(`Location: Cave Interior`, 10, 65);
-          } else {
-            ctx.fillText(`Location: Village Interior`, 10, 65);
+          if (currentInterior) {
+            if (currentInterior.type === 'dark_cave') {
+              ctx.fillText(`Location: Cave Interior`, 10, 65);
+            } else if (currentInterior.type === 'ruined_castle') {
+              ctx.fillText(`Location: Ruined Castle Interior`, 10, 65);
+            } else if (currentInterior.type === 'wizards_tower') {
+              ctx.fillText(`Location: Wizard's Tower`, 10, 65);
+            } else if (currentInterior.type === 'village') {
+              ctx.fillText(`Location: Village Interior`, 10, 65);
+            } else {
+              ctx.fillText(`Location: Interior`, 10, 65);
+            }
           }
         } else {
           // Show current biome if available
@@ -1449,6 +1481,11 @@ Click "Connect" to join world "alpha"
           status.textContent = 'connected';
           status.className = 'connected';
           log('[SYSTEM] Connected to world: ' + seed);
+          // Send testing flags if enabled
+          if (ignoreTerrain) {
+            socket.emit('testing-flags', { ignoreTerrain: true });
+          }
+          setupRegenListener();
         });
         
         socket.on('disconnect', (r) => { 
@@ -1566,6 +1603,48 @@ Click "Connect" to join world "alpha"
         socket.emit('breed-request', { poiId, parentAId: 'a1', parentBId: 'b2' });
         log('[ACTION] Breeding request at: ' + poiId);
       };
+
+      // Ignore terrain toggle
+      const ignoreBtn = document.getElementById('ignoreTerrainBtn');
+      ignoreBtn.onclick = () => {
+        ignoreTerrain = !ignoreTerrain;
+        ignoreBtn.textContent = `Ignore Terrain: ${ignoreTerrain ? 'On' : 'Off'}`;
+        log(`[TEST] Ignore terrain ${ignoreTerrain ? 'enabled' : 'disabled'}`);
+        if (socket) socket.emit('testing-flags', { ignoreTerrain });
+      };
+
+      // Regenerate POI (dev): clears interior cache server-side and re-enters
+      const regenBtn = document.getElementById('regenPoi');
+      regenBtn.onclick = () => {
+        if (!socket) { log('[ERROR] Not connected'); return; }
+        let target = null;
+        if (gameState.currentPOI) {
+          target = gameState.currentPOI;
+        } else {
+          const near = findNearbyPOI();
+          if (near) target = near.id;
+        }
+        if (!target) { log('[ERROR] No POI targeted (stand near or be inside)'); return; }
+        log(`[TEST] Regenerating POI: ${target}`);
+        gameState.poiInteriors.delete(target);
+        socket.emit('regenerate-poi', { poiId: target });
+        // If inside, request new interior right away
+        if (gameState.currentPOI === target) {
+          socket.emit('enter-poi', { poiId: target });
+        }
+      };
+
+      // Acknowledge regeneration
+      function setupRegenListener() {
+        if (!socket) return;
+        socket.on('poi-regenerated', (p) => {
+          if (p.ok) {
+            log(`[TEST] POI regenerated: ${p.poiId}`);
+          } else {
+            log(`[ERROR] Failed to regenerate POI: ${p.poiId}`);
+          }
+        });
+      }
       
       // Hide controls hint after first movement
       let controlsShown = true;

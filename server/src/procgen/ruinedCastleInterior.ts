@@ -127,7 +127,7 @@ export function generateRuinedCastle(poiId: string, seed: string, rarity: Rarity
   guardPositions.forEach((p, i) => {
     if (p.x > 1 && p.y > 1 && p.x < width - 1 && p.y < height - 1) {
       if (grid[p.y][p.x].walkable) {
-        entities.push({ id: `guard-${i}`, type: 'guard', position: { x: p.x, y: p.y }, state: {} });
+        entities.push({ id: `guard-${i}`, type: 'guard', name: 'Castle Guard', position: { x: p.x, y: p.y }, state: {} });
       }
     }
   });

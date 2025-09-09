@@ -139,7 +139,8 @@ export function generateDarkCave(poiId: string, seed: string, opts?: { guarantee
       const y = rng.randomInt(2, height - 3);
       if (!grid[y][x].walkable) continue;
       if (x === entranceX && y === entranceY) continue;
-      entities.push({ id: `mob-${i}`, type: rng.randomElement(creatureTypes)!, position: { x, y }, state: {} });
+      const t = rng.randomElement(creatureTypes)!;
+      entities.push({ id: `mob-${i}`, type: t, name: t === 'bat' ? 'Bat' : 'Slime', position: { x, y }, state: {} });
       placed = true;
     }
   }
@@ -171,7 +172,7 @@ export function generateDarkCave(poiId: string, seed: string, opts?: { guarantee
         }
       }
     }
-    entities.push({ id: `egg-1`, type: 'dragon_egg', position: { x: fx, y: fy }, state: { special: true } });
+    entities.push({ id: `egg-1`, type: 'dragon_egg', name: 'Dragon Egg', position: { x: fx, y: fy }, state: { special: true } });
   }
 
   const interior: POIInterior = {
