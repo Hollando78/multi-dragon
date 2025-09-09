@@ -372,7 +372,8 @@ Click "Connect" to join world "alpha"
       let gameState = {
         currentPOI: null, // null = overworld, string = POI interior
         poiInteriors: new Map(), // cached interior layouts
-        nearbyPOI: null // POI player is close to (for interaction prompts)
+        nearbyPOI: null, // POI player is close to (for interaction prompts)
+        overworldPosition: null // Store player position before entering POI
       };
       
       // Camera system with deadzone and zoom
@@ -543,6 +544,26 @@ Click "Connect" to join world "alpha"
       
       // Check if a world position is walkable
       function isWalkable(worldX, worldY) {
+        // Handle village interiors
+        if (gameState.currentPOI) {
+          const interior = gameState.poiInteriors.get(gameState.currentPOI);
+          if (interior) {
+            // Convert pixel coordinates to interior grid coordinates
+            const gridX = Math.floor(worldX / 16);
+            const gridY = Math.floor(worldY / 16);
+            
+            // Check interior bounds
+            if (gridX < 0 || gridY < 0 || gridX >= interior.width || gridY >= interior.height) {
+              return false;
+            }
+            
+            // Check if the interior cell is walkable
+            const cell = interior.layout[gridY] && interior.layout[gridY][gridX];
+            return cell ? cell.walkable : false;
+          }
+        }
+        
+        // Handle overworld movement
         if (!worldData || !worldData.world.biomeMap) return true; // Allow movement if no world data
         
         const tileX = Math.floor(worldX / 8);
@@ -1042,35 +1063,57 @@ Click "Connect" to join world "alpha"
       
       function enterVillage(poi) {
         log('[SYSTEM] Entering ' + poi.name + '...');
+        console.log('Entering village:', poi.id, 'Socket connected:', !!socket);
+        console.log(`[DEBUG] Client position: (${me.x}, ${me.y}), POI position: (${poi.position.x * 8}, ${poi.position.y * 8})`);
         
         // Check if we have cached interior
         const cached = gameState.poiInteriors.get(poi.id);
         if (cached) {
           // Use cached interior
+          console.log('Using cached interior');
           transitionToInterior(poi, cached);
         } else {
           // Request interior generation from server
+          console.log('Requesting interior from server for POI:', poi.id);
           socket.emit('enter-poi', { poiId: poi.id });
+          
+          // Add timeout to detect if server doesn't respond
+          setTimeout(() => {
+            console.log('No response from server after 5 seconds');
+            log('[ERROR] Village entry timed out - server may not be responding');
+          }, 5000);
         }
       }
       
       function exitPOI() {
         log('[SYSTEM] Leaving village...');
+        
+        // Restore overworld position
+        if (gameState.overworldPosition) {
+          me.x = gameState.overworldPosition.x;
+          me.y = gameState.overworldPosition.y;
+          camera.x = me.x;
+          camera.y = me.y;
+        }
+        
         gameState.currentPOI = null;
-        // Player position will be restored to overworld position
+        gameState.overworldPosition = null;
       }
       
       function transitionToInterior(poi, interior) {
+        // Store current overworld position
+        gameState.overworldPosition = { x: me.x, y: me.y };
+        
         gameState.currentPOI = poi.id;
-        // Set player to village entrance
-        me.x = interior.entrance.x * 8; // Convert grid to pixels
-        me.y = interior.entrance.y * 8;
+        // Set player to village entrance (convert grid coordinates to interior pixel coordinates)
+        me.x = interior.entrance.x * 16; // Convert grid to interior pixels (16px per cell)
+        me.y = interior.entrance.y * 16;
         camera.x = me.x;
         camera.y = me.y;
       }
       
       // Movement setup - Initialize once, outside of socket setup
-      const speed = 400; // px per second (increased for better visibility)
+      const speed = 100; // pixels per second (matches server MAX_SPEED)
       let keys = new Set();
       
       window.onkeydown = (e) => {

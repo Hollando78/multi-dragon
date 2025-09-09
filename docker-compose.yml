@@ -9,8 +9,8 @@ services:
       - PORT=3004
       - JWT_SECRET=dev_access_secret_change_me
       - JWT_REFRESH_SECRET=dev_refresh_secret_change_me
-      - REDIS_URL=redis://redis:6300
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5400/dragon
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/dragon
       - CHUNK_SIZE=64
     depends_on:
       - redis

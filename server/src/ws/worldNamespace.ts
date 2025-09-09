@@ -19,7 +19,7 @@ import { generateVillageInterior } from '../procgen/villageInterior.js';
 
 type PlayersMap = Map<string, PlayerState>; // key by socket.id
 
-const MAX_SPEED = 10; // units per second (adjust later)
+const MAX_SPEED = 100; // pixels per second (reasonable game speed)
 const BROADCAST_HZ = 12; // 10-15 Hz
 const BROADCAST_INTERVAL = 1000 / BROADCAST_HZ;
 
@@ -226,7 +226,12 @@ export function attachWorldNamespace(io: Namespace) {
 
     // Village entry handler
     socket.on('enter-poi', async ({ poiId }: { poiId: string }) => {
-      if (!(await wsRateLimit(userId, 'enter-poi', 5, 30))) return;
+      logger.info({ userId, poiId }, 'enter_poi_request_received');
+      
+      if (!(await wsRateLimit(userId, 'enter-poi', 5, 30))) {
+        logger.warn({ userId, poiId }, 'enter_poi_rate_limited');
+        return;
+      }
       wsEvents.inc({ namespace: socket.nsp.name, event: 'enter-poi' });
       
       try {
@@ -261,8 +266,12 @@ export function attachWorldNamespace(io: Namespace) {
           // Generate new interior
           if (poi.type === 'village') {
             interior = generateVillageInterior(poiId, poi.seed);
-            // Cache the generated interior
-            await setPOIState(seed, `${poiId}:interior`, interior);
+            // Try to cache the generated interior (fallback if Redis fails)
+            try {
+              await setPOIState(seed, `${poiId}:interior`, interior);
+            } catch (e) {
+              logger.warn({ poiId, seed, error: (e as Error).message }, 'failed_to_cache_interior');
+            }
             logger.info({ poiId, seed }, 'generated_village_interior');
           } else {
             socket.emit('poi-entry-error', { error: 'unsupported_poi_type' });

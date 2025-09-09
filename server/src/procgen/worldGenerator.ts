@@ -125,6 +125,8 @@ export class WorldGenerator {
     const size = terrainData.heightMap.length;
     const suitableBiomes = ['grassland', 'savanna', 'shrubland', 'forest'];
     
+    console.log(`[DEBUG] Attempting to place spawn village near spawn point: ${spawnPoint.x}, ${spawnPoint.y}`);
+    
     // Try to place village within 3-8 tiles of spawn point
     for (let radius = 3; radius <= 8; radius++) {
       const candidates: Vector2[] = [];
@@ -144,8 +146,11 @@ export class WorldGenerator {
         }
       }
       
+      console.log(`[DEBUG] Radius ${radius}: found ${candidates.length} candidates`);
+      
       if (candidates.length > 0) {
         const position = rng.randomElement(candidates)!;
+        console.log(`[DEBUG] Placed Haven Village at: ${position.x}, ${position.y} (spawn: ${spawnPoint.x}, ${spawnPoint.y})`);
         return {
           id: rng.generateUUID('spawn-village'),
           type: POI_TYPES.VILLAGE,
@@ -157,6 +162,7 @@ export class WorldGenerator {
       }
     }
     
+    console.log(`[DEBUG] Failed to place spawn village - no suitable candidates found near spawn point`);
     return null; // Fallback - couldn't place near spawn
   }
 
