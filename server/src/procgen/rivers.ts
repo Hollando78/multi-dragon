@@ -88,8 +88,8 @@ function buildFlowMap(heightMap: number[][]): FlowNode[][] {
     for (let x = 0; x < size; x++) {
       const currentHeight = heightMap[y][x];
       
-      // Skip if already underwater
-      if (currentHeight <= SEA_LEVEL) {
+      // Skip if already in deep ocean (but allow flow through beach/coast to reach ocean)
+      if (currentHeight <= SEA_LEVEL * 0.5) {
         continue;
       }
       
@@ -249,6 +249,7 @@ function traceRiverPaths(
   heightMap: number[][]
 ): RiverSegment[] {
   const segments: RiverSegment[] = [];
+  const size = heightMap.length;
   
   for (const source of sources) {
     const points: RiverPoint[] = [];
@@ -267,8 +268,20 @@ function traceRiverPaths(
       // Update flow accumulation as we go downstream
       flowAccumulation = Math.max(flowAccumulation, current.flowAccumulation);
       
-      // Stop if we reach the ocean
-      if (heightMap[current.y][current.x] <= SEA_LEVEL) {
+      const currentHeight = heightMap[current.y][current.x];
+      
+      // Continue until we reach deep ocean (not just beach/coast)
+      if (currentHeight <= SEA_LEVEL * 0.5) {
+        break;
+      }
+      
+      // If we can't flow further but haven't reached ocean, try to extend toward ocean
+      if (!current.flowsTo) {
+        // Find the nearest ocean cell and extend the river there
+        const oceanPoint = findNearestOcean(current.x, current.y, heightMap, size);
+        if (oceanPoint && distance({ x: current.x, y: current.y }, oceanPoint) <= 5) {
+          points.push({ x: oceanPoint.x, y: oceanPoint.y, width: 1 });
+        }
         break;
       }
       
@@ -432,6 +445,35 @@ function findConfluences(segments: RiverSegment[]): Vector2[] {
 }
 
 // Helper function to smooth river paths for more natural appearance
+function findNearestOcean(startX: number, startY: number, heightMap: number[][], size: number): Vector2 | null {
+  // Simple BFS to find nearest ocean cell within reasonable distance
+  const queue: Array<{x: number, y: number, dist: number}> = [{x: startX, y: startY, dist: 0}];
+  const visited = new Set<string>();
+  const maxDistance = 10; // Don't search too far
+  
+  while (queue.length > 0) {
+    const {x, y, dist} = queue.shift()!;
+    const key = `${x},${y}`;
+    
+    if (visited.has(key) || dist > maxDistance) continue;
+    visited.add(key);
+    
+    if (x >= 0 && x < size && y >= 0 && y < size) {
+      const height = heightMap[y][x];
+      if (height <= SEA_LEVEL * 0.5) {
+        return {x, y};
+      }
+      
+      // Add neighbors to queue
+      for (const [dx, dy] of [[-1,0], [1,0], [0,-1], [0,1]]) {
+        queue.push({x: x + dx, y: y + dy, dist: dist + 1});
+      }
+    }
+  }
+  
+  return null;
+}
+
 export function smoothRiverPath(points: RiverPoint[], iterations: number = 2): RiverPoint[] {
   let smoothed = points.map(p => ({ ...p }));
   
