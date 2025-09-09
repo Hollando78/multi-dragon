@@ -11,12 +11,15 @@ A comprehensive multiplayer dragon collection MMORPG featuring real-time gamepla
     - `move-player` (server-authoritative speed clamp, chunk rooms)
     - `player-moved` broadcast at ~12 Hz per chunk
     - `chat-message` (local/world channels)
+    - `enter-poi`/`poi-interior` for POI interiors (villages, towns, caves, ruins, towers, lighthouses, dragon grounds, ancient circles)
+    - `enter-building`/`building-interior` for nested Town buildings (tavern, blacksmith, alchemist, bank, library, market, guardhouse, temple)
   - Optional Redis adapter for Socket.IO (if `REDIS_URL` is set)
   - Service stubs for Redis and Postgres
 - Data: Initial SQL migrations for Players, Dragons, Quests, NPCs, POIInteriors, PlayerInventories, WorldStates, Guilds, Trade
 - Local stack: `docker-compose.yml` for API, Redis, Postgres
 - Test client: `server/public/index.html` simple canvas + chat to exercise movement/chat
   - Shows chunk-state logs on chunk enter, can trigger POI interaction and demo breeding.
+  - Debug tools: Ignore Terrain toggle (dev only) and Regenerate POI button
 - Phase 3 (initial):
   - Territory control: claim API and WS territory updates
   - Races: track CRUD and leaderboard endpoints
@@ -25,7 +28,9 @@ A comprehensive multiplayer dragon collection MMORPG featuring real-time gamepla
   - Territory battles: start/complete, contested states, seasonal reset
   - Auctions: create/bid with snipe guard and periodic settlement
   - Tournaments: participants, bracket start, report results
-  - Races anti-cheat: min time and telemetry flags
+ - Races anti-cheat: min time and telemetry flags
+ - POIs (implemented): Village, Town, Dark Cave (Egg Cavern), Ruined Castle, Wizard’s Tower, Lighthouse, Dragon Grounds, Ancient Circle
+ - Roads (aesthetic): Deterministic per seed; connect towns and villages; constrained to landmasses; minimal crossings; merge-friendly routing
  - Phase 4 (foundations):
    - Security: helmet, API rate limiting, GDPR delete `DELETE /me`
    - Observability: Prometheus `/metrics`, WS/HTTP metrics, request IDs
@@ -85,6 +90,14 @@ All ports are managed via `portman.py` to avoid conflicts:
 - Profiles API: `GET /profiles/:userId`, `PATCH /profiles/me` (added)
 - Offline import: `POST /offline/import` to link offline progress (added)
  - Chat: local/world/guild channels; DMs via `direct-message` WS event.
+
+ Completed:
+ - Dark Cave POI system with procedural cave generation
+ - Egg Cavern special location with guaranteed Dragon Egg collectible
+ - Interior coordinate system for POI exploration
+ - Cave rendering with collision detection and entity placement
+ - Cellular automata cave generation algorithm
+ - BFS pathfinding for optimal Dragon Egg placement
 
  Upcoming:
  - Inventory integration and true trade escrow (item transfer & rollback)
@@ -153,6 +166,8 @@ All ports are managed via `portman.py` to avoid conflicts:
 - `move-player` - Update player position
 - `chat-message` - Send chat message
 - `interact-poi` - Interact with POI
+- `enter-poi` - Enter POI interior
+- `enter-building` - Enter nested building interior (inside a Town)
 - `trade-request` - Initiate trade
 - `dragon-action` - Dragon actions
 - `direct-message` - Send DM
@@ -162,9 +177,23 @@ All ports are managed via `portman.py` to avoid conflicts:
 - `player-moved` - Player position updates
 - `chat-message` - Chat messages
 - `poi-interaction` - POI interaction results
+- `poi-interior` - POI interior layout and data
+- `building-interior` - Nested building interior layout and data (Town buildings)
 - `trade-update` - Trade status updates
 - `world-event` - World events
 - `territory-update` - Territory changes
+
+## Roads and POIs
+
+- Roads are deterministic, aesthetic polylines connecting settlements (villages and towns). They are limited to each landmass (no ocean-spanning roads), with minimal crossings and merge-friendly routing. Exposed in the manifest as `world.roads`.
+- Towns are larger settlements with numerous houses and advanced buildings; buildings enforce at least one-tile spacing. Inside a Town, stand at a building door and press Space to enter its interior; press Space inside to exit back to town.
+- Lighthouses spawn on prominent headlands; enter from the exterior south door (press Space). The interior guarantees a corridor from the door into the tower; outbuildings are placed away from the entry corridor.
+- Dragon Grounds appear at the edge of mountains or deep hills; contain guarded entrances, chambers (and dungeons at higher rarity), a dragon lair, and gold hoards.
+- Ancient Circles contain rings of standing stones, an altar, druids, and a portal at higher rarities.
+
+### Rarity
+
+POIs scale with rarity (`common`, `rare`, `epic`, `legendary`) to adjust size, floors/chambers, loot/guards, and special features. Towns place more houses and advanced buildings with higher rarity; towers gain more floors; caves and dragon grounds expand; lighthouses gain floors and boat chance; ancient circles add rings/druids and portals.
 
 ## Deployment Instructions
 
@@ -267,6 +296,49 @@ docker compose logs -f nginx
 - Monitor active connections, request latency, and database performance
 - Use Prometheus/Grafana for visualization
 
+## Dark Cave System
+
+The Dark Cave system provides procedurally generated cave interiors with collectible Dragon Eggs near spawn points.
+
+### Features
+
+- **Procedural Generation**: Caves created using cellular automata algorithms
+- **Guaranteed Dragon Eggs**: Special "Egg Cavern" contains collectible Dragon Eggs
+- **Creature Population**: Bats and slimes spawn in caves for atmosphere
+- **Container System**: Treasure chests placed at cave dead-ends
+- **Dual Coordinate Systems**: Grid-based interior movement with pixel-perfect rendering
+
+### Technical Implementation
+
+#### Cave Generation (`server/src/procgen/caveInterior.ts`)
+1. **Initial Seed**: 48x36 grid with ~55% floor probability
+2. **Cellular Automata**: 4 iterations of neighbor-based smoothing
+3. **Connectivity**: Flood-fill ensures all areas accessible from entrance
+4. **Entrance**: Center-top positioning with guaranteed corridor
+5. **Dragon Egg Placement**: BFS algorithm finds farthest walkable cell
+
+#### Coordinate Systems
+- **World Map**: Pixel coordinates (8px per tile) for overworld movement
+- **Interiors**: Grid coordinates (1 unit per cell) for precise navigation
+- **Rendering**: Grid converted to pixels (16px per cell) for display
+
+#### Client Features
+- **Movement**: Separate physics for interior vs overworld
+- **Collision**: Layout-based walkability checking
+- **Camera**: Direct follow mode in interiors, deadzone in overworld
+- **Interaction**: Spacebar to enter/exit POIs and collect items
+
+### File Structure
+```
+server/src/procgen/
+├── caveInterior.ts       # Cave generation algorithm
+├── worldGenerator.ts     # POI placement logic  
+├── constants.ts          # POIInterior interface
+└── rng.ts               # Deterministic RNG
+
+server/public/index.html  # Client rendering & interaction
+```
+
 ## Architecture Notes
 
 - **Server-authoritative**: All game state validated server-side
@@ -274,5 +346,6 @@ docker compose logs -f nginx
 - **Hybrid persistence**: Redis for hot data, PostgreSQL for cold storage
 - **Deterministic generation**: Worlds generated from seeds for consistency
 - **Rate limiting**: API and WebSocket throttling to prevent abuse
+- **Dual coordinate systems**: Pixel coordinates for overworld, grid coordinates for interiors
 
 Refer to `ACTION_PLAN.md` for detailed implementation milestones and `AGENTS.md` for development guidelines.
