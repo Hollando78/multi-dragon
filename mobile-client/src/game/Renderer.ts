@@ -16,7 +16,7 @@ export class Renderer {
   private minimapCanvas: HTMLCanvasElement;
   private minimapCtx: CanvasRenderingContext2D;
   
-  private world: any = null;
+  public world: any = null;
   private poiInterior: any = null;
   
   // Rendering config (match desktop client)
@@ -29,8 +29,8 @@ export class Renderer {
   private lastMinimapUpdate = 0;
   private frameCount = 0;
   
-  // Desktop client's exact biome colors and metadata
-  private biomeData: { [key: string]: { baseColor: string; colorVariance: number; walkable: boolean; name: string } | string } = {
+  // Desktop client's exact biome colors and metadata (accessible for walkability validation)
+  public biomeData: { [key: string]: { baseColor: string; colorVariance: number; walkable: boolean; name: string } | string } = {
     ocean: {
       name: 'Ocean',
       baseColor: '#1e40af', // deep blue
@@ -127,12 +127,21 @@ export class Renderer {
     }
   };
   
+  // Desktop client's exact POI colors
   private poiColors: { [key: string]: string } = {
-    'village': '#8B4513',
-    'cave': '#2F2F2F',
-    'tower': '#4B0082',
-    'ruins': '#A0522D',
-    'shrine': '#FFD700'
+    'village': '#ef4444',        // red
+    'town': '#14b8a6',           // teal  
+    'ruined_castle': '#6b7280',  // gray
+    'wizards_tower': '#8b5cf6',  // purple
+    'dark_cave': '#1f2937',      // dark gray
+    'dragon_grounds': '#dc2626', // dark red
+    'lighthouse': '#f59e0b',     // orange
+    'ancient_circle': '#06b6d4', // cyan
+    // Legacy mappings for compatibility
+    'cave': '#1f2937',           // dark gray (same as dark_cave)
+    'tower': '#8b5cf6',          // purple (same as wizards_tower)
+    'ruins': '#6b7280',          // gray (same as ruined_castle)
+    'shrine': '#06b6d4'          // cyan (same as ancient_circle)
   };
   
   constructor(canvasId: string) {
@@ -307,6 +316,9 @@ export class Renderer {
     // Render rivers
     this.renderRivers();
     
+    // Render roads (before POIs for proper layering)
+    this.renderRoads();
+    
     // Render POIs
     this.renderPOIs();
     
@@ -401,31 +413,95 @@ export class Renderer {
     }
   }
   
+  private renderRoads(): void {
+    if (!this.world.world || !this.world.world.roads) return;
+    
+    // Use desktop client's exact styling
+    this.ctx.strokeStyle = '#8b5a2b'; // Brown color (matches desktop)
+    this.ctx.lineWidth = Math.max(1, 2); // Fixed width for mobile performance
+    this.ctx.lineJoin = 'round';
+    this.ctx.lineCap = 'round';
+    
+    for (const road of this.world.world.roads) {
+      if (!road || road.length < 2) continue;
+      
+      this.ctx.beginPath();
+      
+      // Convert road points from tile coordinates to pixel coordinates
+      for (let i = 0; i < road.length; i++) {
+        const point = road[i];
+        const pixelX = point.x * this.baseTileSize; // Convert tile to pixels (8px per tile)
+        const pixelY = point.y * this.baseTileSize;
+        
+        if (i === 0) {
+          this.ctx.moveTo(pixelX, pixelY);
+        } else {
+          this.ctx.lineTo(pixelX, pixelY);
+        }
+      }
+      
+      this.ctx.stroke();
+    }
+  }
+  
   private renderPOIs(): void {
     if (!this.world.world || !this.world.world.pois) return;
     
     for (const poi of this.world.world.pois) {
-      const color = this.poiColors[poi.type] || '#8B4513';
-      const size = 24;
+      const color = this.poiColors[poi.type] || '#fff';
       
-      // Convert tile position to pixel position
+      // Use desktop client's zoom-responsive sizing (mobile default zoom = 1)
+      const camera = { zoom: 1 }; // Default zoom, could be passed from gameState if needed
+      const poiSize = 6 * camera.zoom;
+      
+      // Convert tile position to pixel position (desktop client style)
       const pixelX = poi.position.x * this.baseTileSize;
       const pixelY = poi.position.y * this.baseTileSize;
       
+      // Draw POI square with desktop client colors
       this.ctx.fillStyle = color;
-      this.ctx.fillRect(pixelX - size/2, pixelY - size/2, size, size);
+      this.ctx.fillRect(pixelX - poiSize/2, pixelY - poiSize/2, poiSize, poiSize);
       
-      // Add border
+      // Add black border (like desktop)
       this.ctx.strokeStyle = '#000';
-      this.ctx.lineWidth = 2;
-      this.ctx.strokeRect(pixelX - size/2, pixelY - size/2, size, size);
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeRect(pixelX - poiSize/2, pixelY - poiSize/2, poiSize, poiSize);
       
-      // Add POI type indicator
-      this.ctx.fillStyle = '#fff';
-      this.ctx.font = '12px system-ui';
-      this.ctx.textAlign = 'center';
-      this.ctx.fillText(poi.type[0].toUpperCase(), pixelX, pixelY + 4);
+      // Draw POI name above the square (like desktop client)
+      // Show name if discovered or if it's a town
+      if (poi.discovered || poi.type === 'town' || poi.name) {
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = `${Math.max(8, 8 * camera.zoom)}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.strokeStyle = '#000';
+        this.ctx.lineWidth = 2;
+        
+        // Add black outline to text for better visibility
+        const text = poi.name || this.getDefaultPOIName(poi.type);
+        this.ctx.strokeText(text, pixelX, pixelY - poiSize/2 - 4);
+        this.ctx.fillText(text, pixelX, pixelY - poiSize/2 - 4);
+      }
     }
+  }
+  
+  private getDefaultPOIName(type: string): string {
+    // Fallback names if POI doesn't have a specific name
+    const defaultNames: { [key: string]: string } = {
+      'village': 'Village',
+      'town': 'Town',
+      'ruined_castle': 'Ruined Castle',
+      'wizards_tower': "Wizard's Tower",
+      'dark_cave': 'Dark Cave',
+      'dragon_grounds': 'Dragon Grounds',
+      'lighthouse': 'Lighthouse',
+      'ancient_circle': 'Ancient Circle',
+      // Legacy mappings
+      'cave': 'Cave',
+      'tower': 'Tower',
+      'ruins': 'Ruins',
+      'shrine': 'Shrine'
+    };
+    return defaultNames[type] || type.charAt(0).toUpperCase() + type.slice(1);
   }
   
   private renderPlayers(players: Map<string, any>, currentPlayer?: any, camera?: any): void {
@@ -503,14 +579,21 @@ export class Renderer {
       }
     }
     
-    // Render POIs using tile coordinates (like desktop)
+    // Render POIs using tile coordinates with proper colors (like desktop)
     if (this.world.world && this.world.world.pois) {
-      this.minimapCtx.fillStyle = '#fff';
       for (const poi of this.world.world.pois) {
         // POIs are already in tile coordinates
         const minimapX = offsetX + poi.position.x * scale;
         const minimapY = offsetY + poi.position.y * scale;
+        
+        // Use the same colors as main view
+        this.minimapCtx.fillStyle = this.poiColors[poi.type] || '#fff';
         this.minimapCtx.fillRect(minimapX - 1.5, minimapY - 1.5, 3, 3);
+        
+        // Add black border like desktop
+        this.minimapCtx.strokeStyle = '#000';
+        this.minimapCtx.lineWidth = 1;
+        this.minimapCtx.strokeRect(minimapX - 1.5, minimapY - 1.5, 3, 3);
       }
     }
     
@@ -533,7 +616,7 @@ export class Renderer {
     this.minimapCtx.restore();
   }
   
-  private getBiomeAt(x: number, y: number): any {
+  public getBiomeAt(x: number, y: number): any {
     if (!this.world || !this.world.world || !this.world.world.biomeMap) return null;
     
     // Convert pixel coordinates to tile coordinates (like desktop client)

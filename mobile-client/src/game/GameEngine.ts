@@ -288,6 +288,11 @@ export class GameEngine {
     const newX = this.gameState.currentPlayer.x + (this.movementVector.x * speed * deltaTime);
     const newY = this.gameState.currentPlayer.y + (this.movementVector.y * speed * deltaTime);
     
+    // Validate that the new position is walkable
+    if (!this.isPositionWalkable(newX, newY)) {
+      return; // Don't move to unwalkable terrain
+    }
+    
     this.socket.emit('move-player', { x: newX, y: newY });
     
     // Optimistic update - only update player position
@@ -297,6 +302,26 @@ export class GameEngine {
     
     // Update player in map
     this.gameState.players.set(this.gameState.currentPlayer.id, this.gameState.currentPlayer);
+  }
+  
+  private isPositionWalkable(x: number, y: number): boolean {
+    if (!this.renderer || !this.renderer.world) return false;
+    
+    // Convert pixel coordinates to tile coordinates
+    const tileX = Math.floor(x / 8); // 8 pixels per tile
+    const tileY = Math.floor(y / 8);
+    
+    // Get biome at this position using renderer's method
+    const biome = this.renderer.getBiomeAt(x, y);
+    if (!biome) return false; // If no biome data, assume not walkable
+    
+    // Get walkable status from renderer's biome data
+    const biomeData = this.renderer.biomeData[biome.type];
+    if (!biomeData || typeof biomeData === 'string') {
+      return false; // Legacy colors or unknown biomes are not walkable
+    }
+    
+    return biomeData.walkable;
   }
   
   start(): void {
