@@ -192,6 +192,50 @@ export class EntityBehaviorSystem {
         return this.createBatBehavior();
       case 'slime':
         return this.createSlimeBehavior();
+      
+      // Wizard Tower entities
+      case 'adept':
+        return this.createAdeptBehavior();
+      case 'archmage':
+        return this.createArchmageBehavior();
+      
+      // Town/Village NPCs
+      case 'innkeeper':
+      case 'blacksmith':
+      case 'alchemist':
+      case 'banker':
+      case 'librarian':
+        return this.createShopkeeperBehavior();
+      case 'priest':
+        return this.createPriestBehavior();
+      
+      // Ancient Circle
+      case 'druid':
+        return this.createDruidBehavior();
+      
+      // Dragon entities
+      case 'dragon':
+        return this.createDragonBehavior();
+      case 'junior_dragon':
+        return this.createJuniorDragonBehavior();
+      case 'thrall':
+        return this.createThrallBehavior();
+      case 'prisoner':
+        return this.createPrisonerBehavior();
+      
+      // Lighthouse
+      case 'keeper':
+        return this.createKeeperBehavior();
+      
+      // Static entities (minimal movement)
+      case 'megalith':
+      case 'altar':
+      case 'portal':
+      case 'boat':
+      case 'dragon_egg':
+      case 'gold_pile':
+        return this.createStaticBehavior();
+      
       default:
         return this.createDefaultBehavior();
     }
@@ -295,6 +339,170 @@ export class EntityBehaviorSystem {
     return new BehaviorTree(root);
   }
   
+  // Behavior tree for adepts (study/research patterns)
+  private createAdeptBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Adepts study, then wander briefly, then study more
+    sequence.addChild(new IdleAction(3000)); // Study/research
+    sequence.addChild(new SetRandomTargetPositionAction(3)); // Small movements around study area
+    sequence.addChild(new MoveToPositionAction(0.8));
+    sequence.addChild(new IdleAction(2000)); // More study
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for archmages (slower, more purposeful movement)
+  private createArchmageBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Archmages move very deliberately with long pauses for contemplation
+    sequence.addChild(new IdleAction(5000)); // Deep contemplation
+    sequence.addChild(new SetRandomTargetPositionAction(2)); // Minimal movement
+    sequence.addChild(new MoveToPositionAction(0.6)); // Slow, dignified pace
+    sequence.addChild(new IdleAction(8000)); // Extended periods of stillness
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for shopkeepers (stay near their stations)
+  private createShopkeeperBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Shopkeepers mostly stay put, occasionally organizing their space
+    sequence.addChild(new IdleAction(4000)); // Tend to customers/work
+    sequence.addChild(new SetRandomTargetPositionAction(1.5)); // Stay very close to station
+    sequence.addChild(new MoveToPositionAction(0.7));
+    sequence.addChild(new IdleAction(6000)); // Back to work
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for priests (prayer and blessing patterns)
+  private createPriestBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Priests pray, move contemplatively, and return to prayer
+    sequence.addChild(new IdleAction(6000)); // Prayer/meditation
+    sequence.addChild(new SetRandomTargetPositionAction(2)); // Contemplative movement
+    sequence.addChild(new MoveToPositionAction(0.5)); // Slow, reverent pace
+    sequence.addChild(new IdleAction(4000)); // More prayer
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for druids (nature-attuned movement)
+  private createDruidBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Druids move in harmony with nature, with ritual pauses
+    sequence.addChild(new IdleAction(3000)); // Commune with nature
+    sequence.addChild(new SetRandomTargetPositionAction(4)); // Move around the circle
+    sequence.addChild(new MoveToPositionAction(0.7)); // Natural pace
+    sequence.addChild(new IdleAction(5000)); // Extended nature communion
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for dragons (territorial, menacing)
+  private createDragonBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Dragons are territorial and move with power and menace
+    sequence.addChild(new IdleAction(8000)); // Brood and watch
+    sequence.addChild(new SetRandomTargetPositionAction(6)); // Patrol territory
+    sequence.addChild(new MoveToPositionAction(1.2)); // Powerful, deliberate movement
+    sequence.addChild(new IdleAction(12000)); // Long periods of watching/guarding
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for junior dragons (more active than adults)
+  private createJuniorDragonBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Young dragons are more restless and active
+    sequence.addChild(new IdleAction(3000)); // Brief rest
+    sequence.addChild(new SetRandomTargetPositionAction(5)); // More active movement
+    sequence.addChild(new MoveToPositionAction(1.0)); // Energetic pace
+    sequence.addChild(new IdleAction(4000)); // Shorter rest periods
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for thralls (servant-like movement)
+  private createThrallBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Thralls move efficiently as servants, with brief pauses
+    sequence.addChild(new IdleAction(2000)); // Brief pause
+    sequence.addChild(new SetRandomTargetPositionAction(4)); // Move to serve
+    sequence.addChild(new MoveToPositionAction(0.9)); // Purposeful pace
+    sequence.addChild(new IdleAction(1500)); // Quick tasks
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for prisoners (dejected, limited movement)
+  private createPrisonerBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Prisoners move little, with dejected posture and long pauses
+    sequence.addChild(new IdleAction(8000)); // Long periods of despair
+    sequence.addChild(new SetRandomTargetPositionAction(1)); // Very limited movement
+    sequence.addChild(new MoveToPositionAction(0.3)); // Slow, dejected pace
+    sequence.addChild(new IdleAction(12000)); // Extended periods of stillness
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for lighthouse keeper (watching the seas)
+  private createKeeperBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Keeper maintains the lighthouse with regular patrols
+    sequence.addChild(new IdleAction(5000)); // Watch the horizon
+    sequence.addChild(new SetRandomTargetPositionAction(3)); // Check equipment
+    sequence.addChild(new MoveToPositionAction(0.7)); // Dutiful pace
+    sequence.addChild(new IdleAction(7000)); // Extended watching
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+  
+  // Behavior tree for static entities (almost no movement)
+  private createStaticBehavior(): BehaviorTree {
+    const root = new RepeatNode();
+    const sequence = new SequenceNode();
+    
+    // Static objects occasionally have very minor positional adjustments
+    sequence.addChild(new IdleAction(30000)); // Very long idle periods
+    sequence.addChild(new SetRandomTargetPositionAction(0.1)); // Minimal movement
+    sequence.addChild(new MoveToPositionAction(0.1)); // Very slow adjustment
+    
+    root.addChild(sequence);
+    return new BehaviorTree(root);
+  }
+
   // Default behavior for unknown entity types
   private createDefaultBehavior(): BehaviorTree {
     const root = new RepeatNode();
@@ -307,14 +515,48 @@ export class EntityBehaviorSystem {
   // Get default disposition for entity type
   private getDefaultDisposition(entityType: string): Disposition {
     switch (entityType) {
+      // Friendly entities
       case 'villager':
       case 'merchant':
+      case 'innkeeper':
+      case 'blacksmith':
+      case 'alchemist':
+      case 'banker':
+      case 'librarian':
+      case 'priest':
+      case 'keeper':
         return Disposition.FRIENDLY;
+      
+      // Neutral entities  
       case 'guard':
+      case 'adept':
+      case 'archmage':
+      case 'druid':
+      case 'thrall':
         return Disposition.NEUTRAL;
+      
+      // Hostile entities
       case 'bandit':
       case 'dragon':
+      case 'junior_dragon':
         return Disposition.HOSTILE;
+      
+      // Special cases
+      case 'prisoner':
+        return Disposition.FRIENDLY; // Prisoners are grateful for help
+      case 'bat':
+      case 'slime':
+        return Disposition.NEUTRAL; // Animals/creatures
+      
+      // Static entities are neutral
+      case 'megalith':
+      case 'altar':
+      case 'portal':
+      case 'boat':
+      case 'dragon_egg':
+      case 'gold_pile':
+        return Disposition.NEUTRAL;
+      
       default:
         return Disposition.NEUTRAL;
     }
