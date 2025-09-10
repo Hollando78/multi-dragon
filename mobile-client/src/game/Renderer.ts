@@ -23,21 +23,102 @@ export class Renderer {
   private baseTileSize = 8; // Base tile size in pixels (matches desktop)
   private chunkSize = 64;
   
-  // Colors for biomes (adapted from desktop client)
-  private biomeColors: { [key: string]: string } = {
-    'plains': '#90EE90',
-    'forest': '#228B22', 
-    'desert': '#F4A460',
-    'mountains': '#8B7355',
-    'ocean': '#4169E1',
-    'swamp': '#556B2F',
-    'tundra': '#E0E0E0',
-    'volcano': '#8B0000',
-    'jungle': '#006400',
-    'coast': '#87CEEB',
-    'beach': '#F5DEB3',
-    'river': '#4682B4',
-    'lake': '#1E90FF'
+  // Desktop client's exact biome colors and metadata
+  private biomeData: { [key: string]: { baseColor: string; colorVariance: number; walkable: boolean; name: string } | string } = {
+    ocean: {
+      name: 'Ocean',
+      baseColor: '#1e40af', // deep blue
+      colorVariance: 0.15,
+      walkable: false
+    },
+    beach: {
+      name: 'Beach', 
+      baseColor: '#fbbf24', // sandy yellow
+      colorVariance: 0.25,
+      walkable: true
+    },
+    coast: {
+      name: 'Coastal Plains',
+      baseColor: '#84cc16', // coastal green
+      colorVariance: 0.3,
+      walkable: true
+    },
+    grassland: {
+      name: 'Grassland',
+      baseColor: '#65a30d', // grass green
+      colorVariance: 0.4,
+      walkable: true
+    },
+    forest: {
+      name: 'Forest',
+      baseColor: '#166534', // forest green
+      colorVariance: 0.35,
+      walkable: true
+    },
+    savanna: {
+      name: 'Savanna',
+      baseColor: '#d97706', // warm brown
+      colorVariance: 0.4,
+      walkable: true
+    },
+    shrubland: {
+      name: 'Shrubland',
+      baseColor: '#a3a65a', // olive green
+      colorVariance: 0.3,
+      walkable: true
+    },
+    hills: {
+      name: 'Hills',
+      baseColor: '#a16207', // brown
+      colorVariance: 0.25,
+      walkable: true
+    },
+    mountain: {
+      name: 'Mountain',
+      baseColor: '#6b7280', // gray
+      colorVariance: 0.2,
+      walkable: false
+    },
+    alpine: {
+      name: 'Alpine',
+      baseColor: '#e5e7eb', // light gray
+      colorVariance: 0.15,
+      walkable: true
+    },
+    taiga: {
+      name: 'Taiga',
+      baseColor: '#14532d', // dark green
+      colorVariance: 0.3,
+      walkable: true
+    },
+    tundra: {
+      name: 'Tundra',
+      baseColor: '#d1d5db', // light gray
+      colorVariance: 0.2,
+      walkable: true
+    },
+    desert: {
+      name: 'Desert',
+      baseColor: '#f59e0b', // desert orange
+      colorVariance: 0.35,
+      walkable: true
+    },
+    // Legacy support for simple colors
+    river: '#4682B4',
+    lake: '#1E90FF',
+    // Alias support
+    plains: {
+      name: 'Plains',
+      baseColor: '#65a30d', // same as grassland
+      colorVariance: 0.4,
+      walkable: true
+    },
+    mountains: {
+      name: 'Mountains',
+      baseColor: '#6b7280', // same as mountain
+      colorVariance: 0.2,
+      walkable: false
+    }
   };
   
   private poiColors: { [key: string]: string } = {
@@ -256,12 +337,8 @@ export class Renderer {
         const biome = this.getBiomeAt(pixelX, pixelY);
         if (!biome) continue;
         
-        // Base biome color
-        let color = this.biomeColors[biome.type] || '#90EE90';
-        
-        // Add color variance
-        const variance = this.getColorVariance(tileX, tileY);
-        color = this.adjustColor(color, variance);
+        // Get desktop client's biome color with multi-octave Perlin noise variance
+        const color = this.getBiomeColor(biome.type, pixelX, pixelY);
         
         this.ctx.fillStyle = color;
         this.ctx.fillRect(pixelX, pixelY, this.baseTileSize, this.baseTileSize);
@@ -272,7 +349,7 @@ export class Renderer {
   private renderRivers(): void {
     if (!this.world.world || !this.world.world.rivers) return;
     
-    this.ctx.strokeStyle = this.biomeColors.river;
+    this.ctx.strokeStyle = this.biomeData.river;
     this.ctx.lineWidth = 8;
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
@@ -392,7 +469,7 @@ export class Renderer {
         const minimapX = offsetX + tileX * scale;
         const minimapY = offsetY + tileY * scale;
         
-        this.minimapCtx.fillStyle = this.biomeColors[biome.type] || '#90EE90';
+        this.minimapCtx.fillStyle = this.getBiomeColor(biome.type, pixelX, pixelY);
         this.minimapCtx.fillRect(minimapX, minimapY, scale * sampleRate, scale * sampleRate);
       }
     }
@@ -445,24 +522,96 @@ export class Renderer {
     return biomeType ? { type: biomeType } : null;
   }
   
-  private getColorVariance(x: number, y: number): number {
-    // Simple pseudo-random variance based on position
-    const seed = x * 31 + y * 17;
-    return (Math.sin(seed) * 0.1); // ±10% variance
+  // Desktop client's exact multi-octave Perlin noise implementation
+  private fade(t: number): number {
+    return t * t * t * (t * (t * 6 - 15) + 10);
   }
   
-  private adjustColor(color: string, variance: number): string {
+  private lerp(t: number, a: number, b: number): number {
+    return a + t * (b - a);
+  }
+  
+  private grad(hash: number, x: number, y: number): number {
+    const h = hash & 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+  }
+  
+  private hash(x: number, y: number, seed: number = 0): number {
+    let h = (x * 374761393 + y * 668265263 + seed * 1013904223) & 0xffffffff;
+    h = (h ^ (h >>> 16)) * 0x85ebca6b;
+    h = (h ^ (h >>> 13)) * 0xc2b2ae35;
+    h = h ^ (h >>> 16);
+    return h & 255;
+  }
+  
+  private perlinNoise(x: number, y: number, seed: number = 0): number {
+    const X = Math.floor(x) & 255;
+    const Y = Math.floor(y) & 255;
+    
+    x -= Math.floor(x);
+    y -= Math.floor(y);
+    
+    const u = this.fade(x);
+    const v = this.fade(y);
+    
+    const a = this.hash(X, Y, seed);
+    const b = this.hash(X + 1, Y, seed);
+    const c = this.hash(X, Y + 1, seed);
+    const d = this.hash(X + 1, Y + 1, seed);
+    
+    return this.lerp(v, this.lerp(u, this.grad(a, x, y), this.grad(b, x - 1, y)),
+                        this.lerp(u, this.grad(c, x, y - 1), this.grad(d, x - 1, y - 1)));
+  }
+  
+  private multiOctaveNoise(x: number, y: number, seed: number = 0, octaves: number = 3): number {
+    let value = 0;
+    let amplitude = 1;
+    let frequency = 0.05; // Start with low frequency for large-scale variation
+    let maxValue = 0;
+    
+    for (let i = 0; i < octaves; i++) {
+      value += this.perlinNoise(x * frequency, y * frequency, seed + i) * amplitude;
+      maxValue += amplitude;
+      amplitude *= 0.6; // Each octave contributes less
+      frequency *= 2.2; // Each octave doubles frequency for finer detail
+    }
+    
+    return value / maxValue; // Normalize to [-1, 1]
+  }
+  
+  private getBiomeColor(biome: string, x: number, y: number): string {
+    const data = this.biomeData[biome];
+    if (!data || typeof data === 'string') {
+      // Legacy support for simple color strings
+      return typeof data === 'string' ? data : '#808080';
+    }
+    
+    const baseColor = data.baseColor;
+    
+    // Use multi-octave Perlin noise for natural color variation
+    // Different seeds for each color channel to avoid correlation
+    const noiseR = this.multiOctaveNoise(x, y, 123, 3);
+    const noiseG = this.multiOctaveNoise(x, y, 456, 3);
+    const noiseB = this.multiOctaveNoise(x, y, 789, 3);
+    
     // Parse hex color
-    const hex = color.replace('#', '');
+    const hex = baseColor.slice(1);
     const r = parseInt(hex.substr(0, 2), 16);
     const g = parseInt(hex.substr(2, 2), 16);
     const b = parseInt(hex.substr(4, 2), 16);
     
-    // Apply variance
-    const factor = 1 + variance;
-    const newR = Math.max(0, Math.min(255, Math.floor(r * factor)));
-    const newG = Math.max(0, Math.min(255, Math.floor(g * factor)));
-    const newB = Math.max(0, Math.min(255, Math.floor(b * factor)));
+    // Apply stronger variation for more visible texture
+    const varyAmount = 50; // Increased for more noticeable variation
+    const dr = Math.floor(noiseR * varyAmount);
+    const dg = Math.floor(noiseG * varyAmount);
+    const db = Math.floor(noiseB * varyAmount);
+    
+    // Clamp to valid range
+    const newR = Math.max(0, Math.min(255, r + dr));
+    const newG = Math.max(0, Math.min(255, g + dg));
+    const newB = Math.max(0, Math.min(255, b + db));
     
     return `rgb(${newR}, ${newG}, ${newB})`;
   }
