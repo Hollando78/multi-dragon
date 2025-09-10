@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dragon Isle Mobile</title>
+    <meta name="description" content="Multiplayer dragon breeding adventure game">
+    <meta name="theme-color" content="#1a1a1a">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DragonIsle">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+        
+        .app-shell {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            width: 64px;
+            height: 64px;
+            border: 4px solid #333;
+            border-top: 4px solid #0080ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 24px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            font-size: 18px;
+            color: #ccc;
+            text-align: center;
+        }
+        
+        .page {
+            display: none;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .page.active {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .welcome-page {
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        .dragon-logo {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        
+        .welcome-title {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: #0080ff;
+        }
+        
+        .welcome-subtitle {
+            font-size: 1rem;
+            color: #ccc;
+            margin-bottom: 2rem;
+        }
+        
+        .button {
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, #0080ff, #0060cc);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            min-height: 44px;
+            min-width: 120px;
+        }
+        
+        .button:hover, .button:focus {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 128, 255, 0.3);
+        }
+        
+        .button:active {
+            transform: translateY(0);
+        }
+        
+        .install-prompt {
+            position: fixed;
+            bottom: 1rem;
+            left: 1rem;
+            right: 1rem;
+            background: rgba(0, 128, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            border-radius: 8px;
+            display: none;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .install-prompt.show {
+            display: flex;
+        }
+        
+        .install-text {
+            flex: 1;
+            font-size: 0.9rem;
+        }
+        
+        .install-button {
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+        <!-- Loading Screen -->
+        <div class="loading-screen" id="loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">
+                <div>Loading Dragon Isle...</div>
+                <div style="font-size: 0.8em; margin-top: 8px; color: #888;">Preparing your adventure</div>
+            </div>
+        </div>
+        
+        <!-- Welcome Page -->
+        <div class="page welcome-page" id="welcome">
+            <div class="dragon-logo">🐉</div>
+            <h1 class="welcome-title">Dragon Isle</h1>
+            <p class="welcome-subtitle">Multiplayer Dragon Breeding Adventure</p>
+            <button class="button" id="playButton">Play Game</button>
+        </div>
+        
+        <!-- PWA Install Prompt -->
+        <div class="install-prompt" id="installPrompt">
+            <div class="install-text">
+                <strong>Install Dragon Isle</strong><br>
+                Add to your home screen for the best experience!
+            </div>
+            <button class="install-button" id="installButton">Install</button>
+            <button class="install-button" id="dismissInstall">×</button>
+        </div>
+    </div>
+    
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
