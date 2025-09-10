@@ -338,55 +338,71 @@ export class Renderer {
   private renderPOIInterior(gameState: RenderState): void {
     if (!this.poiInterior) return;
     
-    // Render interior tiles
     const interior = this.poiInterior;
-    // Use consistent scaling with main world - interior tiles should be larger for visibility
-    const tileSize = this.baseTileSize * (gameState.camera?.zoom || 4);
+    
+    // Add dark background for caves like desktop client
+    if (interior.type === 'dark_cave') {
+      const rect = this.canvas.getBoundingClientRect();
+      this.ctx.fillStyle = '#0f1419'; // Very dark blue-gray background
+      this.ctx.fillRect(-rect.width, -rect.height, rect.width * 2, rect.height * 2);
+    }
+    
+    // Use fixed 16px tile size for consistency (like desktop client)
+    const tileSize = 16; // Fixed size, not zoom-dependent
     
     // Validate interior data structure
-    // Server sends 'layout' array instead of 'tiles'
     if (!interior.layout || !Array.isArray(interior.layout)) {
       console.error('POI interior layout data is invalid:', interior);
       return;
     }
     
-    if (!interior.width || !interior.height) {
-      console.error('POI interior dimensions are invalid:', interior);
+    // Derive dimensions from layout array (server doesn't send explicit width/height)
+    const interiorHeight = interior.layout.length;
+    const interiorWidth = interior.layout.length > 0 ? interior.layout[0].length : 0;
+    
+    if (interiorWidth === 0 || interiorHeight === 0) {
+      console.error('POI interior dimensions are invalid:', { width: interiorWidth, height: interiorHeight });
       return;
     }
     
-    // Layout is 2D array, so we need to check the total row count equals height
-    if (interior.layout.length !== interior.height) {
-      console.error(`POI interior layout array length mismatch. Expected rows: ${interior.height}, Got: ${interior.layout.length}`);
-      return;
-    }
+    // Calculate visible area around camera (like desktop client)
+    const camera = gameState.camera;
+    const viewWidth = this.canvas.width / (gameState.camera?.zoom || 1) / tileSize;
+    const viewHeight = this.canvas.height / (gameState.camera?.zoom || 1) / tileSize;
     
-    for (let y = 0; y < interior.height; y++) {
-      // Validate row exists
-      if (!interior.layout[y] || !Array.isArray(interior.layout[y])) {
-        console.error(`POI interior row ${y} is invalid:`, interior.layout[y]);
-        continue;
-      }
+    const startX = Math.max(0, Math.floor(camera.x - viewWidth / 2));
+    const endX = Math.min(interiorWidth - 1, Math.ceil(camera.x + viewWidth / 2));
+    const startY = Math.max(0, Math.floor(camera.y - viewHeight / 2));
+    const endY = Math.min(interiorHeight - 1, Math.ceil(camera.y + viewHeight / 2));
+    
+    // Render interior tiles
+    for (let y = startY; y <= endY; y++) {
+      if (!interior.layout[y] || !Array.isArray(interior.layout[y])) continue;
       
-      // Validate row width
-      if (interior.layout[y].length !== interior.width) {
-        console.error(`POI interior row ${y} width mismatch. Expected: ${interior.width}, Got: ${interior.layout[y].length}`);
-        continue;
-      }
-      
-      for (let x = 0; x < interior.width; x++) {
+      for (let x = startX; x <= endX; x++) {
+        if (x >= interior.layout[y].length) continue;
+        
         const tile = interior.layout[y][x];
-        const tileX = x * tileSize;
-        const tileY = y * tileSize;
+        // Convert tile coordinates to screen coordinates (like desktop)
+        const screenX = (x - camera.x) * tileSize;
+        const screenY = (y - camera.y) * tileSize;
         
         // Render tile based on type
         this.ctx.fillStyle = this.getTileColor(tile);
-        this.ctx.fillRect(tileX, tileY, tileSize, tileSize);
+        this.ctx.fillRect(screenX, screenY, tileSize, tileSize);
         
-        // Add tile border
-        this.ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(tileX, tileY, tileSize, tileSize);
+        // Add borders for walls/doors like desktop client
+        if (tile && typeof tile === 'object') {
+          if (tile.type === 'wall') {
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(screenX, screenY, tileSize, tileSize);
+          } else if (tile.type === 'door') {
+            this.ctx.strokeStyle = '#8B4513';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(screenX, screenY, tileSize, tileSize);
+          }
+        }
       }
     }
     
@@ -394,34 +410,76 @@ export class Renderer {
     if (interior.entities && Array.isArray(interior.entities)) {
       for (const entity of interior.entities) {
         if (entity.position) {
-          const entityX = entity.position.x * tileSize + tileSize / 4;
-          const entityY = entity.position.y * tileSize + tileSize / 4;
+          // Convert entity tile position to screen coordinates
+          const screenX = (entity.position.x - camera.x) * tileSize;
+          const screenY = (entity.position.y - camera.y) * tileSize;
+          const entitySize = 12;
           
-          // Render entity based on type
+          // Check if this entity is nearby and interactable
+          const isNearby = this.isEntityNearPlayer(entity, gameState);
+          
+          // Render entity based on type (like desktop client)
           this.ctx.fillStyle = this.getEntityColor(entity.type);
-          this.ctx.fillRect(entityX, entityY, tileSize / 2, tileSize / 2);
           
-          // Add entity border
-          this.ctx.strokeStyle = '#000000';
-          this.ctx.lineWidth = 1;
-          this.ctx.strokeRect(entityX, entityY, tileSize / 2, tileSize / 2);
+          if (entity.type === 'dragon_egg') {
+            // Draw egg shape (ellipse)
+            const eggWidth = entitySize * 0.8;
+            const eggHeight = entitySize * 1.2;
+            this.ctx.beginPath();
+            this.ctx.ellipse(screenX, screenY, eggWidth/2, eggHeight/2, 0, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            // Add highlight for nearby interactable eggs
+            if (isNearby) {
+              this.ctx.strokeStyle = '#ffeb3b'; // Bright yellow highlight
+              this.ctx.lineWidth = 3;
+              this.ctx.stroke();
+              
+              // Add pulsing glow effect
+              const time = Date.now() / 500;
+              const glowAlpha = 0.3 + 0.2 * Math.sin(time);
+              this.ctx.shadowColor = '#ffeb3b';
+              this.ctx.shadowBlur = 8;
+              this.ctx.globalAlpha = glowAlpha;
+              this.ctx.stroke();
+              this.ctx.globalAlpha = 1;
+              this.ctx.shadowBlur = 0;
+            } else {
+              // Regular border for egg
+              this.ctx.strokeStyle = '#b45309';
+              this.ctx.lineWidth = 2;
+              this.ctx.stroke();
+            }
+          } else {
+            // Regular entity rendering
+            this.ctx.fillRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
+            
+            // Add highlight for nearby entities
+            if (isNearby) {
+              this.ctx.strokeStyle = '#ffeb3b';
+              this.ctx.lineWidth = 2;
+              this.ctx.strokeRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
+            }
+          }
           
-          // Add name label above entity
+          // Add name label with interaction hint for nearby entities
           if (entity.name) {
-            this.ctx.font = `${Math.max(10, tileSize / 4)}px Arial`;
-            this.ctx.fillStyle = '#000000';
+            this.ctx.fillStyle = '#fff';
+            this.ctx.font = '12px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText(
-              entity.name, 
-              entityX + tileSize / 4, 
-              entityY - 4
-            );
+            this.ctx.fillText(entity.name, screenX, screenY - entitySize/2 - 4);
+            
+            if (isNearby && entity.type === 'dragon_egg') {
+              this.ctx.fillStyle = '#ffeb3b';
+              this.ctx.font = '10px Arial';
+              this.ctx.fillText('⚡ Tap to collect', screenX, screenY + entitySize/2 + 16);
+            }
           }
         }
       }
     }
     
-    // Render players in interior
+    // Render players in interior (using tile coordinates)
     this.renderPlayers(gameState.players, gameState.currentPlayer, gameState.camera);
   }
   
@@ -461,7 +519,7 @@ export class Renderer {
   private renderRivers(): void {
     if (!this.world.world || !this.world.world.rivers) return;
     
-    this.ctx.strokeStyle = this.biomeData.river;
+    this.ctx.strokeStyle = '#4682B4'; // River color
     this.ctx.lineWidth = 8;
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
@@ -587,13 +645,13 @@ export class Renderer {
       let renderX = player.x;
       let renderY = player.y;
       
-      // In POI interiors, convert tile coordinates to pixel coordinates
       if (this.poiInterior) {
-        const tileSize = this.baseTileSize * (camera?.zoom || 4);
-        renderX = player.x * tileSize + tileSize / 2; // Center in tile
-        renderY = player.y * tileSize + tileSize / 2;
+        // Interior: use tile coordinates directly with camera offset (like desktop)
+        const tileSize = 16; // Fixed 16px per tile
+        renderX = (player.x - camera.x) * tileSize;
+        renderY = (player.y - camera.y) * tileSize;
       }
-      // For main world, use coordinates as-is (original working behavior)
+      // Overworld: use coordinates as-is (pixel coordinates)
       
       this.renderHappyPlayer(renderX, renderY, isCurrentPlayer, player.color, player.name);
     });
@@ -659,7 +717,7 @@ export class Renderer {
     }
   }
   
-  private renderUI(gameState: RenderState): void {
+  private renderUI(_gameState: RenderState): void {
     // Could add debug info, FPS counter, etc.
   }
   
@@ -882,29 +940,64 @@ export class Renderer {
     // Handle tile objects with type property
     const tileType = typeof tile === 'object' ? tile.type : tile;
     
-    // Interior tile colors
-    switch (tileType) {
-      case 'floor': return '#D2B48C';           // Tan floor
-      case 'wall': return '#8B4513';            // Dark brown walls
-      case 'door': return '#654321';            // Brown door
-      case 'water': return '#4169E1';           // Blue water
-      case 'grass': return '#90EE90';           // Light green grass
-      case 'road': return '#696969';            // Gray road
-      case 'house': return '#A0522D';           // Sienna house
-      case 'tavern': return '#CD853F';          // Peru tavern
-      case 'shop': return '#DEB887';            // Burlywood shop
-      case 'entrance': return '#FFD700';        // Gold entrance
-      default: return '#90EE90';                // Default light green
-    }
+    // Match desktop client's exact interior tile colors
+    const colors: { [key: string]: string } = {
+      // Village interior colors
+      grass: '#65a30d',    // green
+      road: '#92400e',     // brown
+      house: '#374151',    // dark gray  
+      tavern: '#7c2d12',   // dark brown
+      shop: '#1e40af',     // blue
+      door: '#8B4513',     // saddle brown
+      
+      // Cave interior colors (bright, clearly visible)
+      wall: '#64748b',     // light gray (clearly visible)
+      floor: '#94a3b8',    // lighter gray (walkable areas)
+      entrance: '#fbbf24', // bright yellow (cave entrance)
+      
+      // Tower-specific cells
+      stairs_up: '#22c55e',   // green stairs
+      stairs_down: '#ef4444', // red stairs
+    };
+    
+    return colors[tileType] || '#222'; // Dark fallback like desktop
+  }
+
+  private isEntityNearPlayer(entity: any, gameState: RenderState): boolean {
+    if (!gameState.currentPlayer || !entity.position) return false;
+    
+    const playerX = gameState.currentPlayer.x;
+    const playerY = gameState.currentPlayer.y;
+    const INTERACTION_DISTANCE = 1.5; // 1.5 tiles in interior coordinates
+    
+    const distance = Math.hypot(playerX - entity.position.x, playerY - entity.position.y);
+    return distance <= INTERACTION_DISTANCE;
   }
 
   private getEntityColor(entityType: string): string {
-    switch (entityType) {
-      case 'villager': return '#FF6B6B';        // Red villager
-      case 'merchant': return '#4ECDC4';        // Teal merchant
-      case 'guard': return '#45B7D1';           // Blue guard
-      default: return '#FF69B4';                // Hot pink default
-    }
+    // Match desktop client's exact entity colors
+    const colors: { [key: string]: string } = {
+      villager: '#10b981',   // green
+      merchant: '#f59e0b',   // orange
+      guard: '#dc2626',      // red
+      archmage: '#8b5cf6',   // purple
+      adept: '#22d3ee',      // cyan
+      dragon_egg: '#f59e0b', // golden egg
+      keeper: '#eab308',     // yellow
+      boat: '#0ea5e9',       // blue
+      dragon: '#dc2626',     // red
+      junior_dragon: '#f97316', // orange
+      thrall: '#9ca3af',     // gray
+      prisoner: '#60a5fa',   // blue
+      gold_pile: '#eab308',  // yellow
+      druid: '#16a34a',      // emerald
+      megalith: '#94a3b8',   // slate
+      altar: '#fde68a',      // pale gold
+      portal: '#7c3aed',     // violet
+      bat: '#6b7280',        // gray bat
+      slime: '#22c55e'       // green slime
+    };
+    return colors[entityType] || '#6b7280'; // Gray fallback
   }
   
   destroy(): void {

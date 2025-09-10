@@ -258,6 +258,58 @@ export function attachWorldNamespace(io: Namespace) {
       }
     });
 
+    // Entity interaction handler (for picking up eggs, etc.)
+    socket.on('interact-entity', async ({ entityId, entityType, entityPosition, playerPosition }: { entityId: string; entityType: string; entityPosition: { x: number; y: number }; playerPosition: { x: number; y: number } }) => {
+      logger.info({ userId, entityId, entityType, entityPosition, playerPosition }, 'entity_interaction_request');
+      
+      if (!(await wsRateLimit(userId, 'interact-entity', 10, 30))) {
+        logger.warn({ userId, entityId }, 'interact_entity_rate_limited');
+        return;
+      }
+      wsEvents.inc({ namespace: socket.nsp.name, event: 'interact-entity' });
+      
+      try {
+        // Validate player is close enough to the entity (using interior coordinates)
+        const distance = Math.hypot(playerPosition.x - entityPosition.x, playerPosition.y - entityPosition.y);
+        const MAX_INTERACT_DISTANCE = 1.5; // 1.5 tiles in interior coordinates
+        
+        if (distance > MAX_INTERACT_DISTANCE) {
+          logger.info({ userId, entityId, distance, maxDistance: MAX_INTERACT_DISTANCE }, 'entity_interaction_too_far');
+          socket.emit('entity-interaction-error', { error: 'too_far', entityId });
+          return;
+        }
+        
+        logger.info({ userId, entityId, distance }, 'entity_interaction_distance_valid');
+        
+        // Handle different entity types
+        if (entityType === 'dragon_egg') {
+          // Add egg to player's inventory (simplified - just broadcast pickup)
+          logger.info({ userId, entityId, position: entityPosition }, 'dragon_egg_picked_up');
+          
+          // Broadcast to all players in the POI that this egg was picked up
+          io.to(state.chunkId).emit('entity-picked-up', { 
+            entityId, 
+            entityType, 
+            position: entityPosition, 
+            pickedUpBy: userId,
+            playerName: state.name 
+          });
+          
+          socket.emit('entity-interaction-success', { 
+            entityId, 
+            entityType, 
+            action: 'pickup',
+            message: 'Dragon Egg collected!' 
+          });
+        } else {
+          socket.emit('entity-interaction-error', { error: 'not_interactable', entityId });
+        }
+      } catch (error) {
+        logger.error({ userId, entityId, error }, 'entity_interaction_error');
+        socket.emit('entity-interaction-error', { error: 'server_error', entityId });
+      }
+    });
+
     // Village entry handler
     socket.on('enter-poi', async ({ poiId }: { poiId: string }) => {
       logger.info({ userId, poiId }, 'enter_poi_request_received');

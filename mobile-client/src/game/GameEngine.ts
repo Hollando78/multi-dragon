@@ -33,6 +33,7 @@ interface GameState {
   };
   currentPOI?: any;
   poiInteriors: Map<string, any>;
+  overworldPosition?: { x: number; y: number };
 }
 
 export class GameEngine {
@@ -208,7 +209,7 @@ export class GameEngine {
         this.gameState.players.set(playerData.userId, player);
         
         // If this is the current player, update position (camera follows automatically)
-        if (playerData.userId === this.gameState.currentPlayer?.id) {
+        if (playerData.userId === this.gameState.currentPlayer?.id && this.gameState.currentPlayer) {
           // Server authoritative position - override client prediction
           this.gameState.currentPlayer.x = playerData.position.x;
           this.gameState.currentPlayer.y = playerData.position.y;
@@ -235,19 +236,23 @@ export class GameEngine {
       this.gameState.currentPOI = data;
       this.renderer.setPOIInterior(data.interior);
       
-      // Position player at the interior entrance point
+      // Position player at the interior entrance point using tile coordinates (like desktop)
       if (data.interior && data.interior.entrance && this.gameState.currentPlayer) {
         console.log('📍 Positioning player at entrance:', data.interior.entrance);
+        // Store overworld position before entering interior
+        if (!this.gameState.overworldPosition) {
+          this.gameState.overworldPosition = { x: this.gameState.currentPlayer.x, y: this.gameState.currentPlayer.y };
+        }
+        
+        // Use tile coordinates directly (like desktop client)
         this.gameState.currentPlayer.x = data.interior.entrance.x;
         this.gameState.currentPlayer.y = data.interior.entrance.y;
         
-        // Update camera to center on entrance
-        const pixelX = data.interior.entrance.x * 8; // Convert to pixels
-        const pixelY = data.interior.entrance.y * 8;
-        this.gameState.camera.x = pixelX;
-        this.gameState.camera.y = pixelY;
-        this.gameState.camera.targetX = pixelX;
-        this.gameState.camera.targetY = pixelY;
+        // Update camera to center on player in tile coordinates (interior mode)
+        this.gameState.camera.x = data.interior.entrance.x;
+        this.gameState.camera.y = data.interior.entrance.y;
+        this.gameState.camera.targetX = data.interior.entrance.x;
+        this.gameState.camera.targetY = data.interior.entrance.y;
       }
     });
     
@@ -269,6 +274,52 @@ export class GameEngine {
           errorMessage = 'Cannot enter POI';
       }
       this.showInteractionFeedback(errorMessage);
+    });
+    
+    // Entity interaction success/error responses
+    this.socket.on('entity-interaction-success', (data: any) => {
+      console.log('✅ Entity interaction success:', data);
+      this.showInteractionFeedback(data.message || 'Item collected!');
+      
+      // Remove the entity from the POI interior
+      if (this.gameState.currentPOI?.interior?.entities) {
+        this.gameState.currentPOI.interior.entities = this.gameState.currentPOI.interior.entities.filter(
+          (entity: any) => entity.id !== data.entityId
+        );
+      }
+    });
+    
+    this.socket.on('entity-interaction-error', (data: any) => {
+      console.log('❌ Entity interaction error:', data);
+      let errorMessage = 'Cannot interact with item';
+      switch (data.error) {
+        case 'too_far':
+          errorMessage = 'Too far from item';
+          break;
+        case 'not_interactable':
+          errorMessage = 'Cannot interact with this';
+          break;
+        default:
+          errorMessage = 'Cannot interact with item';
+      }
+      this.showInteractionFeedback(errorMessage);
+    });
+    
+    // Handle entity pickups from other players
+    this.socket.on('entity-picked-up', (data: any) => {
+      console.log('📦 Entity picked up by another player:', data);
+      
+      // Remove the entity from the POI interior
+      if (this.gameState.currentPOI?.interior?.entities) {
+        this.gameState.currentPOI.interior.entities = this.gameState.currentPOI.interior.entities.filter(
+          (entity: any) => entity.id !== data.entityId
+        );
+      }
+      
+      // Show notification if it wasn't this player who picked it up
+      if (data.pickedUpBy !== this.gameState.currentPlayer?.id) {
+        this.showInteractionFeedback(`${data.playerName} collected ${data.entityType}!`);
+      }
     });
     
     // Chunk state updates
@@ -319,16 +370,23 @@ export class GameEngine {
     let newX, newY;
     
     if (this.gameState.currentPOI) {
-      // POI interior: movement in tile coordinates
-      const tileSpeed = 2; // tiles per second
+      // POI interior: movement in tile coordinates (like desktop client)
+      const tileSpeed = 3; // tiles per second (match desktop)
       const deltaTime = this.movementThrottle / 1000;
       
       newX = this.gameState.currentPlayer.x + (this.movementVector.x * tileSpeed * deltaTime);
       newY = this.gameState.currentPlayer.y + (this.movementVector.y * tileSpeed * deltaTime);
       
-      // Round to nearest tile for POI interiors
-      newX = Math.round(newX);
-      newY = Math.round(newY);
+      // Don't send network updates for interior movement (client-side only like desktop)
+      if (!this.isPositionWalkable(newX, newY)) {
+        return; // Don't move to unwalkable terrain
+      }
+      
+      // Optimistic update - client-side only movement in POI interiors
+      this.gameState.currentPlayer.x = newX;
+      this.gameState.currentPlayer.y = newY;
+      this.gameState.players.set(this.gameState.currentPlayer.id, this.gameState.currentPlayer);
+      return; // No network emission for interior movement
     } else {
       // Main world: movement in pixel coordinates
       const speed = 100; // pixels per second
@@ -336,22 +394,22 @@ export class GameEngine {
       
       newX = this.gameState.currentPlayer.x + (this.movementVector.x * speed * deltaTime);
       newY = this.gameState.currentPlayer.y + (this.movementVector.y * speed * deltaTime);
+      
+      // Validate that the new position is walkable
+      if (!this.isPositionWalkable(newX, newY)) {
+        return; // Don't move to unwalkable terrain
+      }
+      
+      this.socket.emit('move-player', { x: newX, y: newY });
+      
+      // Optimistic update - only update player position
+      // Camera targeting is handled in update() method
+      this.gameState.currentPlayer.x = newX;
+      this.gameState.currentPlayer.y = newY;
+      
+      // Update player in map
+      this.gameState.players.set(this.gameState.currentPlayer.id, this.gameState.currentPlayer);
     }
-    
-    // Validate that the new position is walkable
-    if (!this.isPositionWalkable(newX, newY)) {
-      return; // Don't move to unwalkable terrain
-    }
-    
-    this.socket.emit('move-player', { x: newX, y: newY });
-    
-    // Optimistic update - only update player position
-    // Camera targeting is handled in update() method
-    this.gameState.currentPlayer.x = newX;
-    this.gameState.currentPlayer.y = newY;
-    
-    // Update player in map
-    this.gameState.players.set(this.gameState.currentPlayer.id, this.gameState.currentPlayer);
   }
   
   private isPositionWalkable(x: number, y: number): boolean {
@@ -361,8 +419,12 @@ export class GameEngine {
       const tileX = Math.floor(x);
       const tileY = Math.floor(y);
       
+      // Derive dimensions from layout (server doesn't send explicit width/height)
+      const interiorHeight = interior.layout?.length || 0;
+      const interiorWidth = interiorHeight > 0 ? interior.layout[0].length : 0;
+      
       // Check bounds
-      if (tileX < 0 || tileX >= interior.width || tileY < 0 || tileY >= interior.height) {
+      if (tileX < 0 || tileX >= interiorWidth || tileY < 0 || tileY >= interiorHeight) {
         return false;
       }
       
@@ -396,8 +458,35 @@ export class GameEngine {
   }
   
   private handlePOIInteraction(): void {
-    if (!this.gameState.currentPlayer || !this.renderer.world?.world?.pois) return;
+    if (!this.gameState.currentPlayer) return;
     
+    // Check if we're in a POI interior
+    if (this.gameState.currentPOI) {
+      // First check for nearby entities to pick up
+      const nearbyEntity = this.findNearbyEntity();
+      if (nearbyEntity) {
+        console.log(`🥚 Attempting to pick up entity: ${nearbyEntity.type}`);
+        this.socket?.emit('interact-entity', {
+          entityId: nearbyEntity.id,
+          entityType: nearbyEntity.type,
+          entityPosition: nearbyEntity.position,
+          playerPosition: { x: this.gameState.currentPlayer.x, y: this.gameState.currentPlayer.y }
+        });
+        return;
+      }
+      
+      // Check if we're at the entrance/exit point
+      if (this.isAtEntranceExit()) {
+        console.log('🚪 Exiting POI interior from entrance/exit');
+        this.exitPOI();
+      } else {
+        this.showInteractionFeedback('Must be at entrance/exit to leave');
+      }
+      return;
+    }
+    
+    // Check for nearby POI to enter
+    if (!this.renderer.world?.world?.pois) return;
     const nearbyPOI = this.findNearbyPOI();
     if (nearbyPOI) {
       console.log(`🏠 Attempting to enter POI: ${nearbyPOI.type} at distance ${nearbyPOI.distance}`);
@@ -409,6 +498,63 @@ export class GameEngine {
     }
   }
   
+  private exitPOI(): void {
+    console.log('🚪 Exiting POI interior');
+    
+    // Clear POI state
+    this.gameState.currentPOI = null;
+    this.renderer.setPOIInterior(null);
+    
+    // Restore overworld position if available
+    if (this.gameState.overworldPosition && this.gameState.currentPlayer) {
+      this.gameState.currentPlayer.x = this.gameState.overworldPosition.x;
+      this.gameState.currentPlayer.y = this.gameState.overworldPosition.y;
+      this.gameState.camera.x = this.gameState.overworldPosition.x;
+      this.gameState.camera.y = this.gameState.overworldPosition.y;
+      this.gameState.camera.targetX = this.gameState.overworldPosition.x;
+      this.gameState.camera.targetY = this.gameState.overworldPosition.y;
+      this.gameState.overworldPosition = undefined;
+    }
+    
+    this.showInteractionFeedback('Exited POI');
+  }
+  
+  private findNearbyEntity(): { id: string, type: string, position: { x: number, y: number } } | null {
+    if (!this.gameState.currentPlayer || !this.gameState.currentPOI?.interior?.entities) return null;
+    
+    const playerX = this.gameState.currentPlayer.x;
+    const playerY = this.gameState.currentPlayer.y;
+    const INTERACTION_DISTANCE = 1.5; // 1.5 tiles in interior coordinates
+    
+    for (const entity of this.gameState.currentPOI.interior.entities) {
+      if (!entity.position) continue;
+      
+      const distance = Math.hypot(playerX - entity.position.x, playerY - entity.position.y);
+      
+      if (distance <= INTERACTION_DISTANCE) {
+        return {
+          id: entity.id,
+          type: entity.type,
+          position: entity.position
+        };
+      }
+    }
+    
+    return null;
+  }
+  
+  private isAtEntranceExit(): boolean {
+    if (!this.gameState.currentPlayer || !this.gameState.currentPOI?.interior?.entrance) return false;
+    
+    const playerX = this.gameState.currentPlayer.x;
+    const playerY = this.gameState.currentPlayer.y;
+    const entrance = this.gameState.currentPOI.interior.entrance;
+    const EXIT_DISTANCE = 1.5; // Must be within 1.5 tiles of entrance
+    
+    const distance = Math.hypot(playerX - entrance.x, playerY - entrance.y);
+    return distance <= EXIT_DISTANCE;
+  }
+
   private findNearbyPOI(): { poi: any, distance: number, type: string } | null {
     if (!this.gameState.currentPlayer || !this.renderer.world?.world?.pois) return null;
     
@@ -487,17 +633,22 @@ export class GameEngine {
   private update(deltaTime: number): void {
     const camera = this.gameState.camera;
     
-    // For mobile, use simpler direct camera following for better responsiveness
     if (this.gameState.currentPlayer) {
-      // Always center camera on player for mobile (no deadzone for now)
-      camera.targetX = this.gameState.currentPlayer.x;
-      camera.targetY = this.gameState.currentPlayer.y;
-      
-      // Faster camera following for mobile
-      const CAMERA_SMOOTHING = 0.15;
-      camera.x += (camera.targetX - camera.x) * CAMERA_SMOOTHING;
-      camera.y += (camera.targetY - camera.y) * CAMERA_SMOOTHING;
-      
+      if (this.gameState.currentPOI) {
+        // Interior camera: direct follow mode (like desktop client)
+        camera.targetX = this.gameState.currentPlayer.x;
+        camera.targetY = this.gameState.currentPlayer.y;
+        camera.x = camera.targetX;
+        camera.y = camera.targetY;
+      } else {
+        // Overworld camera: smoothed following for mobile
+        camera.targetX = this.gameState.currentPlayer.x;
+        camera.targetY = this.gameState.currentPlayer.y;
+        
+        const CAMERA_SMOOTHING = 0.15;
+        camera.x += (camera.targetX - camera.x) * CAMERA_SMOOTHING;
+        camera.y += (camera.targetY - camera.y) * CAMERA_SMOOTHING;
+      }
     }
     
     camera.zoom += (camera.targetZoom - camera.zoom) * 0.1;
