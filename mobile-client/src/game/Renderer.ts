@@ -23,6 +23,12 @@ export class Renderer {
   private baseTileSize = 8; // Base tile size in pixels (matches desktop)
   private chunkSize = 64;
   
+  // Performance optimizations
+  private colorCache: Map<string, string> = new Map();
+  private lastCacheClean = 0;
+  private lastMinimapUpdate = 0;
+  private frameCount = 0;
+  
   // Desktop client's exact biome colors and metadata
   private biomeData: { [key: string]: { baseColor: string; colorVariance: number; walkable: boolean; name: string } | string } = {
     ocean: {
@@ -243,8 +249,13 @@ export class Renderer {
     // Render UI elements (not affected by camera)
     this.renderUI(gameState);
     
-    // Update minimap
-    this.renderMinimap(gameState);
+    // Update minimap less frequently for better performance (every 10 frames)
+    this.frameCount++;
+    const now = Date.now();
+    if (now - this.lastMinimapUpdate > 200 || this.frameCount % 10 === 0) { // Update every 200ms or 10 frames
+      this.renderMinimap(gameState);
+      this.lastMinimapUpdate = now;
+    }
   }
   
   private applyCameraTransform(camera: { x: number, y: number, zoom: number }): void {
@@ -279,11 +290,16 @@ export class Renderer {
     const viewWidth = this.canvas.width / camera.zoom;
     const viewHeight = this.canvas.height / camera.zoom;
     
-    // Calculate visible tile area (like desktop client)
-    const startTileX = Math.max(0, Math.floor((camera.x - viewWidth) / this.baseTileSize));
-    const endTileX = Math.ceil((camera.x + viewWidth) / this.baseTileSize);
-    const startTileY = Math.max(0, Math.floor((camera.y - viewHeight) / this.baseTileSize));
-    const endTileY = Math.ceil((camera.y + viewHeight) / this.baseTileSize);
+    // Mobile optimization: reduce render distance for better performance
+    const mobileRenderFactor = 0.75; // Render 25% less area on mobile
+    const mobileViewWidth = viewWidth * mobileRenderFactor;
+    const mobileViewHeight = viewHeight * mobileRenderFactor;
+    
+    // Calculate visible tile area with mobile optimization
+    const startTileX = Math.max(0, Math.floor((camera.x - mobileViewWidth) / this.baseTileSize));
+    const endTileX = Math.ceil((camera.x + mobileViewWidth) / this.baseTileSize);
+    const startTileY = Math.max(0, Math.floor((camera.y - mobileViewHeight) / this.baseTileSize));
+    const endTileY = Math.ceil((camera.y + mobileViewHeight) / this.baseTileSize);
     
     // Render terrain
     this.renderTerrain(startTileX, endTileX, startTileY, endTileY, camera);
@@ -329,6 +345,10 @@ export class Renderer {
   private renderTerrain(startTileX: number, endTileX: number, startTileY: number, endTileY: number, camera: any): void {
     const tileSize = this.baseTileSize * camera.zoom; // Apply zoom to tile size
     
+    // Batch similar colors together for better performance
+    const colorBatches = new Map<string, Array<{x: number, y: number}>>();
+    
+    // First pass: collect tiles by color
     for (let tileX = startTileX; tileX <= endTileX; tileX++) {
       for (let tileY = startTileY; tileY <= endTileY; tileY++) {
         const pixelX = tileX * this.baseTileSize;
@@ -337,11 +357,20 @@ export class Renderer {
         const biome = this.getBiomeAt(pixelX, pixelY);
         if (!biome) continue;
         
-        // Get desktop client's biome color with multi-octave Perlin noise variance
         const color = this.getBiomeColor(biome.type, pixelX, pixelY);
         
-        this.ctx.fillStyle = color;
-        this.ctx.fillRect(pixelX, pixelY, this.baseTileSize, this.baseTileSize);
+        if (!colorBatches.has(color)) {
+          colorBatches.set(color, []);
+        }
+        colorBatches.get(color)!.push({x: pixelX, y: pixelY});
+      }
+    }
+    
+    // Second pass: render each color batch
+    for (const [color, tiles] of colorBatches) {
+      this.ctx.fillStyle = color;
+      for (const tile of tiles) {
+        this.ctx.fillRect(tile.x, tile.y, this.baseTileSize, this.baseTileSize);
       }
     }
   }
@@ -582,19 +611,35 @@ export class Renderer {
   }
   
   private getBiomeColor(biome: string, x: number, y: number): string {
+    // Clean cache periodically to prevent memory leaks
+    const now = Date.now();
+    if (now - this.lastCacheClean > 5000) { // Clean every 5 seconds
+      this.colorCache.clear();
+      this.lastCacheClean = now;
+    }
+    
+    // Use tile coordinates for caching (8x8 pixel tiles)
+    const tileX = Math.floor(x / 8);
+    const tileY = Math.floor(y / 8);
+    const cacheKey = `${biome}-${tileX}-${tileY}`;
+    
+    // Check cache first
+    if (this.colorCache.has(cacheKey)) {
+      return this.colorCache.get(cacheKey)!;
+    }
+    
     const data = this.biomeData[biome];
     if (!data || typeof data === 'string') {
       // Legacy support for simple color strings
-      return typeof data === 'string' ? data : '#808080';
+      const color = typeof data === 'string' ? data : '#808080';
+      this.colorCache.set(cacheKey, color);
+      return color;
     }
     
     const baseColor = data.baseColor;
     
-    // Use multi-octave Perlin noise for natural color variation
-    // Different seeds for each color channel to avoid correlation
-    const noiseR = this.multiOctaveNoise(x, y, 123, 3);
-    const noiseG = this.multiOctaveNoise(x, y, 456, 3);
-    const noiseB = this.multiOctaveNoise(x, y, 789, 3);
+    // Use single octave noise for mobile performance (much faster)
+    const noise = this.perlinNoise(tileX * 0.1, tileY * 0.1, 123);
     
     // Parse hex color
     const hex = baseColor.slice(1);
@@ -602,18 +647,20 @@ export class Renderer {
     const g = parseInt(hex.substr(2, 2), 16);
     const b = parseInt(hex.substr(4, 2), 16);
     
-    // Apply stronger variation for more visible texture
-    const varyAmount = 50; // Increased for more noticeable variation
-    const dr = Math.floor(noiseR * varyAmount);
-    const dg = Math.floor(noiseG * varyAmount);
-    const db = Math.floor(noiseB * varyAmount);
+    // Apply lighter variation for better performance
+    const varyAmount = 30; // Reduced for performance
+    const dr = Math.floor(noise * varyAmount);
+    const dg = Math.floor(noise * varyAmount * 0.8); // Slight variation per channel
+    const db = Math.floor(noise * varyAmount * 1.2);
     
     // Clamp to valid range
     const newR = Math.max(0, Math.min(255, r + dr));
     const newG = Math.max(0, Math.min(255, g + dg));
     const newB = Math.max(0, Math.min(255, b + db));
     
-    return `rgb(${newR}, ${newG}, ${newB})`;
+    const color = `rgb(${newR}, ${newG}, ${newB})`;
+    this.colorCache.set(cacheKey, color);
+    return color;
   }
   
   private getTileColor(tile: any): string {
