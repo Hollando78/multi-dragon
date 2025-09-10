@@ -1,0 +1,14 @@
+{
+  "name": "dragon-isle-mobile-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "http-proxy-middleware": "^3.0.0",
+    "compression": "^1.7.4",
+    "express": "^4.19.2"
+  }
+}

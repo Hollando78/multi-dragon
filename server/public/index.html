@@ -608,18 +608,65 @@ Click "Connect" to join world "alpha"
         }
       };
 
-      // Simple noise function for smooth color variance
-      function simpleNoise(x, y, scale = 0.1) {
-        // Multiple octaves of noise for more natural variation
-        const octave1 = Math.sin(x * scale * 2.1) * Math.cos(y * scale * 1.7);
-        const octave2 = Math.sin(x * scale * 4.3) * Math.cos(y * scale * 3.9) * 0.5;
-        const octave3 = Math.sin(x * scale * 8.7) * Math.cos(y * scale * 7.1) * 0.25;
-        
-        return (octave1 + octave2 + octave3) / 1.75; // normalize roughly to [-1, 1]
+      // Multi-octave Perlin-style noise for natural color variation
+      function fade(t) {
+        return t * t * t * (t * (t * 6 - 15) + 10);
       }
-
-      // Global setting for color variance (can be toggled for debugging)
-      const ENABLE_COLOR_VARIANCE = true;
+      
+      function lerp(t, a, b) {
+        return a + t * (b - a);
+      }
+      
+      function grad(hash, x, y) {
+        const h = hash & 15;
+        const u = h < 8 ? x : y;
+        const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+        return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+      }
+      
+      function hash(x, y, seed = 0) {
+        let h = (x * 374761393 + y * 668265263 + seed * 1013904223) & 0xffffffff;
+        h = (h ^ (h >>> 16)) * 0x85ebca6b;
+        h = (h ^ (h >>> 13)) * 0xc2b2ae35;
+        h = h ^ (h >>> 16);
+        return h & 255;
+      }
+      
+      function perlinNoise(x, y, seed = 0) {
+        const X = Math.floor(x) & 255;
+        const Y = Math.floor(y) & 255;
+        
+        x -= Math.floor(x);
+        y -= Math.floor(y);
+        
+        const u = fade(x);
+        const v = fade(y);
+        
+        const a = hash(X, Y, seed);
+        const b = hash(X + 1, Y, seed);
+        const c = hash(X, Y + 1, seed);
+        const d = hash(X + 1, Y + 1, seed);
+        
+        return lerp(v, lerp(u, grad(a, x, y), grad(b, x - 1, y)),
+                      lerp(u, grad(c, x, y - 1), grad(d, x - 1, y - 1)));
+      }
+      
+      // Multi-octave noise with frequency and amplitude scaling
+      function multiOctaveNoise(x, y, seed = 0, octaves = 3) {
+        let value = 0;
+        let amplitude = 1;
+        let frequency = 0.05; // Start with low frequency for large-scale variation
+        let maxValue = 0;
+        
+        for (let i = 0; i < octaves; i++) {
+          value += perlinNoise(x * frequency, y * frequency, seed + i) * amplitude;
+          maxValue += amplitude;
+          amplitude *= 0.6; // Each octave contributes less
+          frequency *= 2.2; // Each octave doubles frequency for finer detail
+        }
+        
+        return value / maxValue; // Normalize to [-1, 1]
+      }
 
       // Function to generate biome color with natural variance
       function getBiomeColor(biome, x, y) {
@@ -627,19 +674,12 @@ Click "Connect" to join world "alpha"
         if (!data) return '#808080'; // fallback gray
         
         const baseColor = data.baseColor;
-        const variance = data.colorVariance;
         
-        if (variance === 0 || !ENABLE_COLOR_VARIANCE) return baseColor;
-        
-        // Use smooth noise-based variance at multiple scales
-        const largeScale = simpleNoise(x, y, 0.05);  // Large regions
-        const mediumScale = simpleNoise(x, y, 0.15); // Medium detail
-        const smallScale = simpleNoise(x, y, 0.3);   // Fine detail
-        
-        // Combine scales with different weights
-        const noiseR = (largeScale * 0.5 + mediumScale * 0.3 + smallScale * 0.2);
-        const noiseG = (simpleNoise(x + 100, y, 0.08) * 0.5 + simpleNoise(x + 100, y, 0.2) * 0.3 + simpleNoise(x + 100, y, 0.35) * 0.2);
-        const noiseB = (simpleNoise(x, y + 100, 0.06) * 0.5 + simpleNoise(x, y + 100, 0.18) * 0.3 + simpleNoise(x, y + 100, 0.32) * 0.2);
+        // Use multi-octave Perlin noise for natural color variation
+        // Different seeds for each color channel to avoid correlation
+        const noiseR = multiOctaveNoise(x, y, 123, 3);
+        const noiseG = multiOctaveNoise(x, y, 456, 3);  
+        const noiseB = multiOctaveNoise(x, y, 789, 3);
         
         // Parse hex color
         const hex = baseColor.slice(1);
@@ -647,8 +687,8 @@ Click "Connect" to join world "alpha"
         const g = parseInt(hex.substr(2, 2), 16);
         const b = parseInt(hex.substr(4, 2), 16);
         
-        // Apply variance with reduced intensity to avoid checkerboard
-        const varyAmount = variance * 35; // Reduced from 60 to 35
+        // Apply stronger variation for more visible texture
+        const varyAmount = 50; // Increased for more noticeable variation
         const dr = Math.floor(noiseR * varyAmount);
         const dg = Math.floor(noiseG * varyAmount);
         const db = Math.floor(noiseB * varyAmount);

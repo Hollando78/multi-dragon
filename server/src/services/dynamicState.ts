@@ -88,8 +88,14 @@ export async function flushDirtyToDb(seed: string, pgPool: any) {
     try {
       const json = await redis.get(key);
       if (!json) continue;
+      const parsed = JSON.parse(json);
       if (key.includes(':poi:')) {
         const poiId = key.split(':poi:')[1];
+        // Persist a valid JSON layout blob. If no explicit layout exists, persist the full state
+        // so the record is never empty and JSONB parsing always succeeds.
+        const layout = parsed && parsed.layout ? parsed.layout : parsed;
+        const entities = Array.isArray(parsed?.entities) ? parsed.entities : [];
+        const discoveredBy = Array.isArray(parsed?.discovered_by) ? parsed.discovered_by : [];
         await pgPool.query(
           `INSERT INTO poi_interiors (id, world_seed, poi_id, layout, entities, discovered_by)
            VALUES ($1, $2, $3, COALESCE($4::jsonb, '{}'::jsonb), COALESCE($5::jsonb,'[]'::jsonb), COALESCE($6::jsonb,'[]'::jsonb))
@@ -98,13 +104,15 @@ export async function flushDirtyToDb(seed: string, pgPool: any) {
             `${seed}:${poiId}`,
             seed,
             poiId,
-            null,
-            JSON.parse(json).entities || [],
-            JSON.parse(json).discovered_by || [],
+            JSON.stringify(layout),
+            JSON.stringify(entities),
+            JSON.stringify(discoveredBy),
           ]
         );
       } else if (key.includes(':npc:')) {
         const npcId = key.split(':npc:')[1];
+        const globalState = parsed?.global_state || {};
+        const questStates = parsed?.quest_states || {};
         await pgPool.query(
           `INSERT INTO npcs (id, world_seed, npc_id, global_state, quest_states)
            VALUES ($1, $2, $3, COALESCE($4::jsonb,'{}'::jsonb), COALESCE($5::jsonb,'{}'::jsonb))
@@ -113,8 +121,8 @@ export async function flushDirtyToDb(seed: string, pgPool: any) {
             `${seed}:${npcId}`,
             seed,
             npcId,
-            JSON.parse(json).global_state || {},
-            JSON.parse(json).quest_states || {},
+            JSON.stringify(globalState),
+            JSON.stringify(questStates),
           ]
         );
       }

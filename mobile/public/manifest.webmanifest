@@ -1,0 +1,52 @@
+{
+  "name": "Dragon Isle — Mobile",
+  "short_name": "DragonIsle",
+  "description": "A multiplayer dragon collection MMORPG with real-time gameplay",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1220",
+  "theme_color": "#0f172a",
+  "categories": ["games", "entertainment"],
+  "lang": "en-US",
+  "prefer_related_applications": false,
+  "display_override": ["standalone", "minimal-ui"],
+  "icons": [
+    { 
+      "src": "/icons/icon-192.svg", 
+      "sizes": "192x192", 
+      "type": "image/svg+xml", 
+      "purpose": "any maskable" 
+    },
+    { 
+      "src": "/icons/icon-512.svg", 
+      "sizes": "512x512", 
+      "type": "image/svg+xml", 
+      "purpose": "any maskable" 
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "Dragon Isle gameplay"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Game",
+      "short_name": "Play",
+      "url": "/?action=play",
+      "icons": [
+        {
+          "src": "/icons/icon-192.svg",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}

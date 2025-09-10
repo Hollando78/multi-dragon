@@ -20,6 +20,11 @@ A comprehensive multiplayer dragon collection MMORPG featuring real-time gamepla
 - Test client: `server/public/index.html` simple canvas + chat to exercise movement/chat
   - Shows chunk-state logs on chunk enter, can trigger POI interaction and demo breeding.
   - Debug tools: Ignore Terrain toggle (dev only) and Regenerate POI button
+ - Mobile client (PWA): `mobile/` service on port 3010 with a touch‑first UI
+   - Two screens: Connect (seed/API/WS) → Game (fullscreen canvas)
+   - Proxies `/api`, `/socket.io`, and `/world/:seed` to the API so only port 3010 is needed
+   - Controls: virtual joystick, pinch‑zoom, action buttons (Center / Interact / Enter / Exit), HUD, chat channel selector
+   - Interiors: Towns and Buildings with lightweight tile rendering; tap NPCs for dialogue
 - Phase 3 (initial):
   - Territory control: claim API and WS territory updates
   - Races: track CRUD and leaderboard endpoints
@@ -46,7 +51,8 @@ A comprehensive multiplayer dragon collection MMORPG featuring real-time gamepla
 
 - With Docker Compose:
   - `docker compose up --build`
-  - Open `http://localhost:3004` → click Connect to join world `alpha`
+  - API/Test client: open `http://localhost:3004`
+  - Mobile client: `docker compose up -d mobile` then open `http://localhost:3010`
 
 - Without Docker (after installing deps):
   - `cd server && npm install`
@@ -58,6 +64,7 @@ A comprehensive multiplayer dragon collection MMORPG featuring real-time gamepla
 
 ### Current Configuration
 - **API Server**: `http://127.0.0.1:3004` (Direct access)
+- **Mobile Client**: `http://127.0.0.1:3010` (PWA with proxy)
 - **Nginx Proxy**: `http://127.0.0.1:8000` (Recommended for production)
 - **PostgreSQL Database**: `127.0.0.1:5400`
 - **Redis Cache**: `127.0.0.1:6300`
@@ -66,6 +73,7 @@ A comprehensive multiplayer dragon collection MMORPG featuring real-time gamepla
 ### Port Assignments
 All ports are managed via `portman.py` to avoid conflicts:
 - `3004` - Express API Server
+- `3010` - Mobile PWA Client
 - `8000` - Nginx Reverse Proxy
 - `5400` - PostgreSQL Database
 - `6300` - Redis Cache
@@ -295,6 +303,19 @@ docker compose logs -f nginx
 - Metrics endpoint: `http://127.0.0.1:3004/metrics`
 - Monitor active connections, request latency, and database performance
 - Use Prometheus/Grafana for visualization
+
+## Mobile PWA Client
+
+- Start: `docker compose up -d --build mobile` → `http://127.0.0.1:3010`
+- Proxy: Mobile server forwards `/api`, `/socket.io`, `/world/:seed` to the API (single port for phone testing).
+- Connect flow: manifest (`?compact=1`) → Socket.IO client load (proxied with CDN fallback) → WS connect → `welcome` → fullscreen Game.
+- Controls: joystick, pinch‑zoom, action FABs (Center/Interact/Enter/Exit), HUD, chat.
+- Interiors: tile‑rendered Towns/Buildings; tap NPCs for dialogue.
+- Phone tunnel: `ssh -N -L 3010:127.0.0.1:3010 user@host`, then open `http://127.0.0.1:3010` on the phone.
+- Verify endpoints:
+  - `GET /healthz` → `{"status":"ok"}`
+  - `GET /api/worlds/alpha/manifest?compact=1` → JSON
+  - `GET /api/socket.io/socket.io.js` → 200
 
 ## Dark Cave System
 

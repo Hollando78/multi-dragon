@@ -14,7 +14,11 @@ router.post('/worlds/:seed/territory/:regionId/battles', verifyAccess, async (re
   if (!gRows.length) return res.status(403).json({ error: 'not_in_guild' });
   const attackerGuild = gRows[0].guild_id;
   const id = randomUUID().replace(/-/g, '');
-  await db.query(`INSERT INTO territory_battles (id, world_seed, region_id, attackers, status, started_at) VALUES ($1, $2, $3, $4, 'active', now())`, [id, seed, regionId, JSON.stringify([attackerGuild])]);
+  await db.query(
+    `INSERT INTO territory_battles (id, world_seed, region_id, attackers, status, started_at)
+     VALUES ($1, $2, $3, $4::jsonb, 'active', now())`,
+    [id, seed, regionId, JSON.stringify([attackerGuild])]
+  );
   await db.query(`UPDATE territories SET contested=true, contested_by=$3 WHERE world_seed=$1 AND region_id=$2`, [seed, regionId, attackerGuild]);
   res.json({ id, seed, regionId, status: 'active' });
 });
@@ -47,4 +51,3 @@ router.post('/territory-battles/:id/complete', verifyAccess, async (req, res) =>
 });
 
 export default router;
-

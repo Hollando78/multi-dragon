@@ -26,9 +26,13 @@ router.post('/worlds/:seed/territory/claim', verifyAccess, async (req, res) => {
   const upkeepCost = 100; // demo flat cost
   const dueAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
   await db.query(
-    `INSERT INTO territories (world_seed, region_id, guild_id, claimed_at, upkeep_cost, upkeep_due_at)
+    `INSERT INTO territories AS t (world_seed, region_id, guild_id, claimed_at, upkeep_cost, upkeep_due_at)
      VALUES ($1, $2, $3, now(), $4, $5)
-     ON CONFLICT (world_seed, region_id) DO UPDATE SET guild_id = COALESCE(territories.guild_id, EXCLUDED.guild_id), claimed_at = COALESCE(territories.claimed_at, EXCLUDED.claimed_at), upkeep_cost=$4, upkeep_due_at=$5`,
+     ON CONFLICT (world_seed, region_id) DO UPDATE
+       SET guild_id = COALESCE(t.guild_id, EXCLUDED.guild_id),
+           claimed_at = COALESCE(t.claimed_at, EXCLUDED.claimed_at),
+           upkeep_cost = EXCLUDED.upkeep_cost,
+           upkeep_due_at = EXCLUDED.upkeep_due_at`,
     [seed, regionId, guildId, upkeepCost, dueAt]
   );
   await db.query(`INSERT INTO territory_claim_logs (world_seed, region_id, guild_id, actor_id, action, details) VALUES ($1, $2, $3, $4, 'claim', '{}'::jsonb)`, [seed, regionId, guildId, req.user!.sub]);

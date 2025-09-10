@@ -24,6 +24,7 @@ import { settleEndedAuctions } from './services/auctions.js';
 import territoryQueueRoutes from './routes/territoryQueue.js';
 import { matchTerritoryQueues } from './services/territoryQueue.js';
 import { enforceUpkeep } from './services/territoryUpkeep.js';
+import { loadFlagsFromEnv, isFeatureEnabled } from './services/flags.js';
 import rateLimit from 'express-rate-limit';
 import { requestId } from './middleware/requestId.js';
 import { registry, timedRoute } from './metrics.js';
@@ -68,13 +69,17 @@ async function main() {
   app.use('/', timedRoute('/players'), playerRoutes);
   app.use('/', timedRoute('/profiles'), profileRoutes);
   app.use('/', timedRoute('/offline/import'), offlineRoutes);
-  app.use('/', timedRoute('/territory'), territoryRoutes);
   app.use('/', timedRoute('/races'), raceRoutes);
   app.use('/', timedRoute('/market'), marketRoutes);
-  app.use('/', timedRoute('/facilities'), facilitiesRoutes);
-  app.use('/', timedRoute('/territory-battles'), battlesRoutes);
+  // Gate territory-related routes behind feature flag
+  loadFlagsFromEnv();
+  if (isFeatureEnabled('territory')) {
+    app.use('/', timedRoute('/facilities'), facilitiesRoutes);
+    app.use('/', timedRoute('/territory-battles'), battlesRoutes);
+    app.use('/', timedRoute('/territory-queue'), territoryQueueRoutes);
+    app.use('/', timedRoute('/territory'), territoryRoutes);
+  }
   app.use('/', timedRoute('/auctions'), auctionRoutes);
-  app.use('/', timedRoute('/territory-queue'), territoryQueueRoutes);
   app.use('/', timedRoute('/me'), gdprRoutes);
   app.use('/', timedRoute('/features'), featuresRoutes);
 
@@ -130,10 +135,13 @@ async function main() {
         for (const seed of new Set(seeds)) {
           await flushDirtyToDb(seed, pool);
         }
-        await checkAndRotateSeason();
+        // Territory-related periodic tasks are gated
+        if (isFeatureEnabled('territory')) {
+          await checkAndRotateSeason();
+          await matchTerritoryQueues();
+          await enforceUpkeep();
+        }
         await settleEndedAuctions();
-        await matchTerritoryQueues();
-        await enforceUpkeep();
       } catch (e) {
         logger.error('flush_interval_error', e as any);
       }
