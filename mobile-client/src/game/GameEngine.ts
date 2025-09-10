@@ -230,9 +230,45 @@ export class GameEngine {
     
     // POI interactions
     this.socket.on('poi-interior', (data: any) => {
-      console.log('🏠 Entered POI interior');
+      console.log('🏠 Entered POI interior', data);
+      console.log('Interior data structure:', data.interior);
       this.gameState.currentPOI = data;
       this.renderer.setPOIInterior(data.interior);
+      
+      // Position player at the interior entrance point
+      if (data.interior && data.interior.entrance && this.gameState.currentPlayer) {
+        console.log('📍 Positioning player at entrance:', data.interior.entrance);
+        this.gameState.currentPlayer.x = data.interior.entrance.x;
+        this.gameState.currentPlayer.y = data.interior.entrance.y;
+        
+        // Update camera to center on entrance
+        const pixelX = data.interior.entrance.x * 8; // Convert to pixels
+        const pixelY = data.interior.entrance.y * 8;
+        this.gameState.camera.x = pixelX;
+        this.gameState.camera.y = pixelY;
+        this.gameState.camera.targetX = pixelX;
+        this.gameState.camera.targetY = pixelY;
+      }
+    });
+    
+    // POI interaction error handling
+    this.socket.on('poi-entry-error', (data: any) => {
+      console.log('❌ POI entry error:', data.error);
+      let errorMessage = 'Cannot enter POI';
+      switch (data.error) {
+        case 'too_far':
+          errorMessage = 'Too far from POI';
+          break;
+        case 'poi_not_found':
+          errorMessage = 'POI not found';
+          break;
+        case 'door_required':
+          errorMessage = 'Must use the door';
+          break;
+        default:
+          errorMessage = 'Cannot enter POI';
+      }
+      this.showInteractionFeedback(errorMessage);
     });
     
     // Chunk state updates
@@ -257,8 +293,7 @@ export class GameEngine {
     });
     
     this.touchControls.onInteract(() => {
-      this.socket?.emit('interact');
-      this.showInteractionFeedback();
+      this.handlePOIInteraction();
     });
     
     this.touchControls.onChat(() => {
@@ -281,12 +316,27 @@ export class GameEngine {
   private sendMovement(): void {
     if (!this.socket || !this.gameState.currentPlayer) return;
     
-    // Calculate new position based on movement vector
-    const speed = 100; // pixels per second
-    const deltaTime = this.movementThrottle / 1000;
+    let newX, newY;
     
-    const newX = this.gameState.currentPlayer.x + (this.movementVector.x * speed * deltaTime);
-    const newY = this.gameState.currentPlayer.y + (this.movementVector.y * speed * deltaTime);
+    if (this.gameState.currentPOI) {
+      // POI interior: movement in tile coordinates
+      const tileSpeed = 2; // tiles per second
+      const deltaTime = this.movementThrottle / 1000;
+      
+      newX = this.gameState.currentPlayer.x + (this.movementVector.x * tileSpeed * deltaTime);
+      newY = this.gameState.currentPlayer.y + (this.movementVector.y * tileSpeed * deltaTime);
+      
+      // Round to nearest tile for POI interiors
+      newX = Math.round(newX);
+      newY = Math.round(newY);
+    } else {
+      // Main world: movement in pixel coordinates
+      const speed = 100; // pixels per second
+      const deltaTime = this.movementThrottle / 1000;
+      
+      newX = this.gameState.currentPlayer.x + (this.movementVector.x * speed * deltaTime);
+      newY = this.gameState.currentPlayer.y + (this.movementVector.y * speed * deltaTime);
+    }
     
     // Validate that the new position is walkable
     if (!this.isPositionWalkable(newX, newY)) {
@@ -305,6 +355,27 @@ export class GameEngine {
   }
   
   private isPositionWalkable(x: number, y: number): boolean {
+    // POI interior walkability check
+    if (this.gameState.currentPOI && this.gameState.currentPOI.interior) {
+      const interior = this.gameState.currentPOI.interior;
+      const tileX = Math.floor(x);
+      const tileY = Math.floor(y);
+      
+      // Check bounds
+      if (tileX < 0 || tileX >= interior.width || tileY < 0 || tileY >= interior.height) {
+        return false;
+      }
+      
+      // Check if tile exists and is walkable
+      if (interior.layout && interior.layout[tileY] && interior.layout[tileY][tileX]) {
+        const tile = interior.layout[tileY][tileX];
+        return tile.walkable !== false; // Default to walkable if not specified
+      }
+      
+      return false;
+    }
+    
+    // Main world walkability check
     if (!this.renderer || !this.renderer.world) return false;
     
     // Convert pixel coordinates to tile coordinates
@@ -322,6 +393,61 @@ export class GameEngine {
     }
     
     return biomeData.walkable;
+  }
+  
+  private handlePOIInteraction(): void {
+    if (!this.gameState.currentPlayer || !this.renderer.world?.world?.pois) return;
+    
+    const nearbyPOI = this.findNearbyPOI();
+    if (nearbyPOI) {
+      console.log(`🏠 Attempting to enter POI: ${nearbyPOI.type} at distance ${nearbyPOI.distance}`);
+      this.socket?.emit('enter-poi', { poiId: nearbyPOI.poi.id });
+      this.showInteractionFeedback();
+    } else {
+      console.log('⚠️ No nearby POI found for interaction');
+      this.showInteractionFeedback('No POI nearby');
+    }
+  }
+  
+  private findNearbyPOI(): { poi: any, distance: number, type: string } | null {
+    if (!this.gameState.currentPlayer || !this.renderer.world?.world?.pois) return null;
+    
+    const playerX = this.gameState.currentPlayer.x;
+    const playerY = this.gameState.currentPlayer.y;
+    const INTERACTION_DISTANCE = 24; // 3 tiles × 8 pixels (same as server)
+    
+    let nearestPOI: { poi: any, distance: number, type: string } | null = null;
+    
+    for (const poi of this.renderer.world.world.pois) {
+      // Convert POI tile coordinates to pixel coordinates
+      const poiPixelX = poi.position.x * 8; // 8 pixels per tile
+      const poiPixelY = poi.position.y * 8;
+      
+      const distance = Math.hypot(playerX - poiPixelX, playerY - poiPixelY);
+      
+      if (distance <= INTERACTION_DISTANCE) {
+        // Special case for lighthouse - check door position
+        if (poi.type === 'lighthouse') {
+          const doorX = poiPixelX;
+          const doorY = poiPixelY + 8; // Door is south of POI center
+          const dx = Math.abs(playerX - doorX);
+          const dy = playerY - poiPixelY; // Must be south of center
+          const doorDistance = Math.hypot(playerX - doorX, playerY - doorY);
+          
+          const atDoor = dx <= 12 && dy >= 0 && doorDistance <= 16;
+          if (atDoor) {
+            nearestPOI = { poi, distance, type: poi.type };
+          }
+        } else {
+          // Standard POI interaction
+          if (!nearestPOI || distance < nearestPOI.distance) {
+            nearestPOI = { poi, distance, type: poi.type };
+          }
+        }
+      }
+    }
+    
+    return nearestPOI;
   }
   
   start(): void {
@@ -451,13 +577,19 @@ export class GameEngine {
     }
   }
   
-  private showInteractionFeedback(): void {
+  private showInteractionFeedback(message?: string): void {
     const prompt = document.getElementById('interactionPrompt');
     if (prompt) {
+      if (message) {
+        prompt.textContent = message;
+      }
       prompt.classList.add('show');
       setTimeout(() => {
         prompt.classList.remove('show');
-      }, 1000);
+        if (message) {
+          prompt.textContent = ''; // Reset message
+        }
+      }, 1500);
     }
   }
   

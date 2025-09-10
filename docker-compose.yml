@@ -53,7 +53,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
   mobile:
-    build: ./mobile
+    build: ./mobile-client
     ports:
       - "3010:3010"
     environment:

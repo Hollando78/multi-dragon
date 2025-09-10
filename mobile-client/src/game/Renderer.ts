@@ -229,6 +229,15 @@ export class Renderer {
   setPOIInterior(interior: any): void {
     this.poiInterior = interior;
     console.log('🏠 POI interior set:', interior ? 'interior' : 'overworld');
+    if (interior) {
+      console.log('Interior details:', {
+        width: interior.width,
+        height: interior.height,
+        tiles: interior.tiles ? `Array[${interior.tiles.length}]` : 'undefined',
+        tilesType: typeof interior.tiles,
+        firstTile: interior.tiles && interior.tiles.length > 0 ? interior.tiles[0] : 'none'
+      });
+    }
   }
   
   render(gameState: RenderState): void {
@@ -331,11 +340,42 @@ export class Renderer {
     
     // Render interior tiles
     const interior = this.poiInterior;
-    const tileSize = 32;
+    // Use consistent scaling with main world - interior tiles should be larger for visibility
+    const tileSize = this.baseTileSize * (gameState.camera?.zoom || 4);
+    
+    // Validate interior data structure
+    // Server sends 'layout' array instead of 'tiles'
+    if (!interior.layout || !Array.isArray(interior.layout)) {
+      console.error('POI interior layout data is invalid:', interior);
+      return;
+    }
+    
+    if (!interior.width || !interior.height) {
+      console.error('POI interior dimensions are invalid:', interior);
+      return;
+    }
+    
+    // Layout is 2D array, so we need to check the total row count equals height
+    if (interior.layout.length !== interior.height) {
+      console.error(`POI interior layout array length mismatch. Expected rows: ${interior.height}, Got: ${interior.layout.length}`);
+      return;
+    }
     
     for (let y = 0; y < interior.height; y++) {
+      // Validate row exists
+      if (!interior.layout[y] || !Array.isArray(interior.layout[y])) {
+        console.error(`POI interior row ${y} is invalid:`, interior.layout[y]);
+        continue;
+      }
+      
+      // Validate row width
+      if (interior.layout[y].length !== interior.width) {
+        console.error(`POI interior row ${y} width mismatch. Expected: ${interior.width}, Got: ${interior.layout[y].length}`);
+        continue;
+      }
+      
       for (let x = 0; x < interior.width; x++) {
-        const tile = interior.tiles[y * interior.width + x];
+        const tile = interior.layout[y][x];
         const tileX = x * tileSize;
         const tileY = y * tileSize;
         
@@ -347,6 +387,37 @@ export class Renderer {
         this.ctx.strokeStyle = 'rgba(0,0,0,0.1)';
         this.ctx.lineWidth = 1;
         this.ctx.strokeRect(tileX, tileY, tileSize, tileSize);
+      }
+    }
+    
+    // Render entities (NPCs) in interior
+    if (interior.entities && Array.isArray(interior.entities)) {
+      for (const entity of interior.entities) {
+        if (entity.position) {
+          const entityX = entity.position.x * tileSize + tileSize / 4;
+          const entityY = entity.position.y * tileSize + tileSize / 4;
+          
+          // Render entity based on type
+          this.ctx.fillStyle = this.getEntityColor(entity.type);
+          this.ctx.fillRect(entityX, entityY, tileSize / 2, tileSize / 2);
+          
+          // Add entity border
+          this.ctx.strokeStyle = '#000000';
+          this.ctx.lineWidth = 1;
+          this.ctx.strokeRect(entityX, entityY, tileSize / 2, tileSize / 2);
+          
+          // Add name label above entity
+          if (entity.name) {
+            this.ctx.font = `${Math.max(10, tileSize / 4)}px Arial`;
+            this.ctx.fillStyle = '#000000';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(
+              entity.name, 
+              entityX + tileSize / 4, 
+              entityY - 4
+            );
+          }
+        }
       }
     }
     
@@ -513,24 +584,79 @@ export class Renderer {
     players.forEach((player) => {
       const isCurrentPlayer = currentPlayer && player.id === currentPlayer.id;
       
+      let renderX = player.x;
+      let renderY = player.y;
       
-      // Player body
-      this.ctx.fillStyle = player.color || (isCurrentPlayer ? '#0080ff' : '#ff4444');
-      this.ctx.beginPath();
-      this.ctx.arc(player.x, player.y, isCurrentPlayer ? 16 : 12, 0, Math.PI * 2);
-      this.ctx.fill();
+      // In POI interiors, convert tile coordinates to pixel coordinates
+      if (this.poiInterior) {
+        const tileSize = this.baseTileSize * (camera?.zoom || 4);
+        renderX = player.x * tileSize + tileSize / 2; // Center in tile
+        renderY = player.y * tileSize + tileSize / 2;
+      }
+      // For main world, use coordinates as-is (original working behavior)
       
-      // Player border
-      this.ctx.strokeStyle = isCurrentPlayer ? '#ffffff' : '#000000';
-      this.ctx.lineWidth = 2;
-      this.ctx.stroke();
-      
-      // Player name
-      this.ctx.fillStyle = '#ffffff';
-      this.ctx.font = '12px system-ui';
-      this.ctx.textAlign = 'center';
-      this.ctx.fillText(player.name || 'Player', player.x, player.y - 25);
+      this.renderHappyPlayer(renderX, renderY, isCurrentPlayer, player.color, player.name);
     });
+  }
+  
+  private renderHappyPlayer(x: number, y: number, isCurrentPlayer: boolean, playerColor?: string, name?: string): void {
+    const size = isCurrentPlayer ? 4 : 3; // Quarter of original size
+    
+    // Player body (happy little circular character)
+    this.ctx.fillStyle = playerColor || (isCurrentPlayer ? '#ffeb3b' : '#4caf50'); // Yellow for current player, green for others
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, size, 0, Math.PI * 2);
+    this.ctx.fill();
+    
+    // Body border
+    this.ctx.strokeStyle = isCurrentPlayer ? '#333' : '#2e7d32';
+    this.ctx.lineWidth = 1;
+    this.ctx.stroke();
+    
+    // Happy face - Eyes
+    this.ctx.fillStyle = '#333';
+    this.ctx.beginPath();
+    // Left eye
+    this.ctx.arc(x - size * 0.4, y - size * 0.3, size * 0.15, 0, Math.PI * 2);
+    this.ctx.fill();
+    // Right eye
+    this.ctx.beginPath();
+    this.ctx.arc(x + size * 0.4, y - size * 0.3, size * 0.15, 0, Math.PI * 2);
+    this.ctx.fill();
+    
+    // Happy face - Smile
+    this.ctx.strokeStyle = '#333';
+    this.ctx.lineWidth = 0.5;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y + size * 0.1, size * 0.5, 0, Math.PI);
+    this.ctx.stroke();
+    
+    // Little arms (tiny lines extending from body)
+    this.ctx.strokeStyle = playerColor || (isCurrentPlayer ? '#ffeb3b' : '#4caf50');
+    this.ctx.lineWidth = 1;
+    // Left arm
+    this.ctx.beginPath();
+    this.ctx.moveTo(x - size * 0.8, y - size * 0.2);
+    this.ctx.lineTo(x - size * 1.3, y - size * 0.5);
+    this.ctx.stroke();
+    // Right arm
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + size * 0.8, y - size * 0.2);
+    this.ctx.lineTo(x + size * 1.3, y - size * 0.5);
+    this.ctx.stroke();
+    
+    // Player name (smaller to match character size)
+    if (name) {
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.strokeStyle = '#000';
+      this.ctx.lineWidth = 1;
+      this.ctx.font = '8px system-ui';
+      this.ctx.textAlign = 'center';
+      
+      // Add text stroke for better visibility
+      this.ctx.strokeText(name || 'Player', x, y - size - 8);
+      this.ctx.fillText(name || 'Player', x, y - size - 8);
+    }
   }
   
   private renderUI(gameState: RenderState): void {
@@ -607,10 +733,16 @@ export class Renderer {
       const minimapX = offsetX + playerTileX * scale;
       const minimapY = offsetY + playerTileY * scale;
       
-      this.minimapCtx.fillStyle = isCurrentPlayer ? '#0080ff' : '#ff4444';
+      // Use same colors as main character rendering
+      this.minimapCtx.fillStyle = player.color || (isCurrentPlayer ? '#ffeb3b' : '#4caf50');
       this.minimapCtx.beginPath();
-      this.minimapCtx.arc(minimapX, minimapY, isCurrentPlayer ? 3 : 2, 0, Math.PI * 2);
+      this.minimapCtx.arc(minimapX, minimapY, isCurrentPlayer ? 2 : 1.5, 0, Math.PI * 2); // Smaller to match new character size
       this.minimapCtx.fill();
+      
+      // Add border for better visibility
+      this.minimapCtx.strokeStyle = isCurrentPlayer ? '#333' : '#2e7d32';
+      this.minimapCtx.lineWidth = 0.5;
+      this.minimapCtx.stroke();
     });
     
     this.minimapCtx.restore();
@@ -747,13 +879,31 @@ export class Renderer {
   }
   
   private getTileColor(tile: any): string {
+    // Handle tile objects with type property
+    const tileType = typeof tile === 'object' ? tile.type : tile;
+    
     // Interior tile colors
-    switch (tile) {
-      case 'floor': return '#D2B48C';
-      case 'wall': return '#8B4513';
-      case 'door': return '#654321';
-      case 'water': return '#4169E1';
-      default: return '#90EE90';
+    switch (tileType) {
+      case 'floor': return '#D2B48C';           // Tan floor
+      case 'wall': return '#8B4513';            // Dark brown walls
+      case 'door': return '#654321';            // Brown door
+      case 'water': return '#4169E1';           // Blue water
+      case 'grass': return '#90EE90';           // Light green grass
+      case 'road': return '#696969';            // Gray road
+      case 'house': return '#A0522D';           // Sienna house
+      case 'tavern': return '#CD853F';          // Peru tavern
+      case 'shop': return '#DEB887';            // Burlywood shop
+      case 'entrance': return '#FFD700';        // Gold entrance
+      default: return '#90EE90';                // Default light green
+    }
+  }
+
+  private getEntityColor(entityType: string): string {
+    switch (entityType) {
+      case 'villager': return '#FF6B6B';        // Red villager
+      case 'merchant': return '#4ECDC4';        // Teal merchant
+      case 'guard': return '#45B7D1';           // Blue guard
+      default: return '#FF69B4';                // Hot pink default
     }
   }
   
