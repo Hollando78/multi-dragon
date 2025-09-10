@@ -322,6 +322,39 @@ export class GameEngine {
       }
     });
     
+    // Handle entity behavior updates from server
+    this.socket.on('entity-updates', (data: any) => {
+      if (!this.gameState.currentPOI || data.poiId !== this.gameState.currentPOI.poiId) {
+        return; // Not in the relevant POI
+      }
+      
+      // Update entity positions and states
+      if (this.gameState.currentPOI.interior?.entities && data.entities) {
+        for (const update of data.entities) {
+          const entity = this.gameState.currentPOI.interior.entities.find(
+            (e: any) => e.id === update.entityId
+          );
+          
+          if (entity) {
+            // Smooth interpolation for position updates
+            if (update.position) {
+              entity.position = update.position;
+              entity.lastUpdate = Date.now();
+            }
+            
+            // Update other properties
+            if (update.facing !== undefined) {
+              entity.facing = update.facing;
+            }
+            
+            if (update.disposition) {
+              entity.disposition = update.disposition;
+            }
+          }
+        }
+      }
+    });
+    
     // Chunk state updates
     this.socket.on('chunk-state', (state: any) => {
       console.log('📍 Chunk state:', state.chunkId);
@@ -500,6 +533,11 @@ export class GameEngine {
   
   private exitPOI(): void {
     console.log('🚪 Exiting POI interior');
+    
+    // Notify server we're leaving the POI
+    if (this.gameState.currentPOI?.poiId) {
+      this.socket?.emit('exit-poi', { poiId: this.gameState.currentPOI.poiId });
+    }
     
     // Clear POI state
     this.gameState.currentPOI = null;

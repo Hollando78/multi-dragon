@@ -6,6 +6,7 @@ import type { MovePlayerEvent, PlayerState, ChatMessage, TradeRequest, TradeUpda
 import jwt from 'jsonwebtoken';
 import { withLock, getPOIState, setPOIState, getChunkState } from '../services/dynamicState.js';
 import { getChunkPOIIds, getChunkNPCIds } from '../services/worldMap.js';
+import { EntityBehaviorSystem } from '../ai/EntityBehaviorSystem.js';
 import crypto from 'crypto';
 import { startTrade, acceptTrade, cancelTrade, confirmTrade, cancelUserTrades, setOffer } from '../services/trade.js';
 import { attemptBreed } from '../services/breeding.js';
@@ -34,12 +35,119 @@ const BROADCAST_INTERVAL = 1000 / BROADCAST_HZ;
 export function attachWorldNamespace(io: Namespace) {
   const players: PlayersMap = new Map();
   const moveBudget = new Map<string, number>();
+  const behaviorSystem = new EntityBehaviorSystem();
+  
+  // Helper function to get behavior tree type description
+  function getBehaviorTreeType(entityType: string): string {
+    switch (entityType) {
+      case 'villager':
+        return 'Wandering Behavior (SetRandomTarget → MoveToPosition → Idle)';
+      case 'guard':
+        return 'Guard Patrol (IsPlayerNearby → Alert | SetRandomTarget → Patrol → Idle)';
+      case 'merchant':
+        return 'Merchant Behavior (IsPlayerNearby → Greet | Idle)';
+      case 'bat':
+        return 'Bat Behavior (SetWallTarget → FlyToPosition → Perch)';
+      case 'slime':
+        return 'Slime Behavior (SetRandomTarget → SlowMove → Idle)';
+      default:
+        return 'Default Behavior (Idle)';
+    }
+  }
 
   let lastBroadcast = 0;
 
-  function broadcastLoop(now: number) {
+  function getPlayersInPOIs(players: PlayersMap): Record<string, any[]> {
+    const playersInPOI: Record<string, any[]> = {};
+    
+    for (const player of players.values()) {
+      // TODO: Track which POI each player is currently in
+      // For now, return empty object as players don't track POI state yet
+    }
+    
+    return playersInPOI;
+  }
+  
+  // Get POI layouts for collision detection (cached in memory for performance)
+  let poiLayoutCache: Map<string, any[][]> | null = null;
+  let layoutCacheTime = 0;
+  const LAYOUT_CACHE_TTL = 60000; // Cache for 1 minute
+  
+  async function getPOILayouts(): Promise<Map<string, any[][]>> {
+    const now = Date.now();
+    
+    // Use cached layouts if recent
+    if (poiLayoutCache && (now - layoutCacheTime) < LAYOUT_CACHE_TTL) {
+      return poiLayoutCache;
+    }
+    
+    const layouts = new Map<string, any[][]>();
+    
+    try {
+      const redis = await getRedis();
+      if (!redis) return layouts;
+      
+      const keys = await redis.keys('poi_interior:*');
+      
+      for (const key of keys) {
+        const data = await redis.get(key);
+        if (data) {
+          const interior = JSON.parse(data);
+          if (interior.layout) {
+            const poiId = key.replace('poi_interior:', '');
+            layouts.set(poiId, interior.layout);
+          }
+        }
+      }
+      
+      // Cache the layouts
+      poiLayoutCache = layouts;
+      layoutCacheTime = now;
+    } catch (error) {
+      console.error('Error loading POI layouts for collision detection:', error);
+    }
+    
+    return layouts;
+  }
+
+  async function broadcastLoop(now: number) {
     if (now - lastBroadcast >= BROADCAST_INTERVAL) {
       lastBroadcast = now;
+      
+      // Update entity behaviors and get synchronization data
+      const worldState = {
+        playersInPOI: getPlayersInPOIs(players),
+        timestamp: now
+      };
+      
+      // Get POI layouts for collision detection
+      const poiLayouts = await getPOILayouts();
+      
+      const entityUpdates = behaviorSystem.update(now - lastBroadcast, worldState, poiLayouts);
+      
+      // Broadcast entity updates to relevant chunks/POIs
+      if (entityUpdates.length > 0) {
+        const entitiesByPOI = new Map<string, typeof entityUpdates>();
+        
+        for (const update of entityUpdates) {
+          const entityData = behaviorSystem.getEntityData(update.entityId);
+          if (entityData) {
+            const poiId = entityData.blackboard.get<string>('poiId');
+            if (poiId) {
+              if (!entitiesByPOI.has(poiId)) {
+                entitiesByPOI.set(poiId, []);
+              }
+              entitiesByPOI.get(poiId)!.push(update);
+            }
+          }
+        }
+        
+        // Broadcast to players in each POI
+        for (const [poiId, updates] of entitiesByPOI) {
+          io.to(`poi:${poiId}`).emit('entity-updates', { poiId, entities: updates });
+        }
+      }
+      
       // Broadcast positions per chunk room for efficiency
       const byChunk = new Map<string, PlayerState[]>();
       for (const p of players.values()) {
@@ -51,10 +159,18 @@ export function attachWorldNamespace(io: Namespace) {
         io.to(chunk).emit('player-moved', payload);
       }
     }
-    setImmediate(() => broadcastLoop(Date.now()));
+    setImmediate(() => {
+      broadcastLoop(Date.now()).catch(error => {
+        console.error('Error in broadcastLoop:', error);
+      });
+    });
   }
   // Start loop
-  setImmediate(() => broadcastLoop(Date.now()));
+  setImmediate(() => {
+    broadcastLoop(Date.now()).catch(error => {
+      console.error('Error starting broadcastLoop:', error);
+    });
+  });
 
   io.use((socket, next) => {
     // Optional auth via query token or header
@@ -211,6 +327,62 @@ export function attachWorldNamespace(io: Namespace) {
       }
       wsConnections.dec({ namespace: socket.nsp.name });
       logger.info({ userId, reason }, 'player_disconnected');
+    });
+
+    // Exit POI handler
+    socket.on('exit-poi', ({ poiId }: { poiId: string }) => {
+      logger.info({ userId, poiId }, 'exit_poi_request');
+      socket.leave(`poi:${poiId}`);
+    });
+
+    // AI Debug: Get entity AI data
+    socket.on('get-entity-ai-data', ({ entityId }: { entityId: string }) => {
+      if (config.env === 'production') return; // Debug only in development
+      
+      const entityData = behaviorSystem.getEntityData(entityId);
+      if (entityData) {
+        const aiData = {
+          entityId,
+          entityType: entityData.blackboard.get('entityType'),
+          disposition: entityData.disposition,
+          position: entityData.blackboard.get('position'),
+          poiId: entityData.blackboard.get('poiId'),
+          nearbyPlayers: entityData.blackboard.get('nearbyPlayers'),
+          health: entityData.blackboard.get('health'),
+          maxHealth: entityData.blackboard.get('maxHealth'),
+          lastUpdate: entityData.lastUpdate,
+          needsSync: entityData.needsSync,
+          // Add behavior tree structure info
+          behaviorTreeType: getBehaviorTreeType(entityData.blackboard.get('entityType') || 'unknown'),
+          // Add current blackboard state (safe subset)
+          blackboardData: {
+            targetPosition: entityData.blackboard.get('targetPosition'),
+            isMoving: entityData.blackboard.get('isMoving'),
+            facing: entityData.blackboard.get('facing'),
+            animationState: entityData.blackboard.get('animationState')
+          }
+        };
+        
+        socket.emit('entity-ai-data', aiData);
+      } else {
+        socket.emit('entity-ai-data', { error: 'Entity not found', entityId });
+      }
+    });
+
+    // AI Debug: Get all entities in POI
+    socket.on('get-poi-entities', ({ poiId }: { poiId: string }) => {
+      if (config.env === 'production') return; // Debug only in development
+      
+      const entities = behaviorSystem.getEntitiesInPOI(poiId);
+      const entityList = entities.map(entityData => ({
+        entityId: entityData.entityId,
+        entityType: entityData.blackboard.get('entityType'),
+        disposition: entityData.disposition,
+        position: entityData.blackboard.get('position'),
+        needsSync: entityData.needsSync
+      }));
+      
+      socket.emit('poi-entities', { poiId, entities: entityList });
     });
 
     // Developer: force regenerate a POI interior by clearing cache
@@ -388,11 +560,45 @@ export function attachWorldNamespace(io: Namespace) {
               logger.warn({ poiId, seed, error: (e as Error).message }, 'failed_to_cache_interior');
             }
             logger.info({ poiId, seed }, 'generated_village_interior');
+            
+            // Add entities to behavior system
+            if (interior.entities) {
+              for (const entity of interior.entities) {
+                if (entity.type !== 'dragon_egg') { // Skip static collectibles
+                  behaviorSystem.addEntity(
+                    entity.id,
+                    entity.type,
+                    entity.position,
+                    poiId
+                  );
+                }
+              }
+            }
           } else {
             socket.emit('poi-entry-error', { error: 'unsupported_poi_type' });
             return;
           }
         }
+        
+        // Ensure entities are added to behavior system (for both new and existing interiors)
+        if (interior && interior.entities) {
+          for (const entity of interior.entities) {
+            if (entity.type !== 'dragon_egg') { // Skip static collectibles
+              // Check if entity is already in behavior system
+              if (!behaviorSystem.getEntityData(entity.id)) {
+                behaviorSystem.addEntity(
+                  entity.id,
+                  entity.type,
+                  entity.position,
+                  poiId
+                );
+              }
+            }
+          }
+        }
+        
+        // Join the POI room to receive entity updates
+        socket.join(`poi:${poiId}`);
         
         // Send interior data to client
         socket.emit('poi-interior', { poiId, interior });

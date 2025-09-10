@@ -305,6 +305,97 @@
         background: rgba(0, 0, 0, 0.5);
         z-index: -1;
       }
+      
+      /* AI Debug Panel */
+      #aiDebugPanel {
+        position: absolute;
+        top: 1rem;
+        right: 250px;
+        width: 300px;
+        background: rgba(42, 42, 42, 0.95);
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 1rem;
+        color: #fff;
+        font-size: 0.85rem;
+        z-index: 60;
+        display: none;
+      }
+      
+      #aiDebugPanel.visible {
+        display: block;
+      }
+      
+      #aiDebugHeader {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: #3b82f6;
+      }
+      
+      #aiDebugClose {
+        background: none;
+        border: none;
+        color: #aaa;
+        cursor: pointer;
+        font-size: 1.2rem;
+        padding: 0;
+        width: 20px;
+        height: 20px;
+      }
+      
+      #aiDebugClose:hover {
+        color: #fff;
+      }
+      
+      #aiDebugContent {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      
+      .ai-debug-section {
+        margin-bottom: 1rem;
+      }
+      
+      .ai-debug-section h4 {
+        color: #10b981;
+        margin-bottom: 0.3rem;
+        font-size: 0.9rem;
+      }
+      
+      .ai-debug-data {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 0.5rem;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.8rem;
+        line-height: 1.4;
+      }
+      
+      .ai-debug-key {
+        color: #fbbf24;
+      }
+      
+      .ai-debug-value {
+        color: #e5e7eb;
+      }
+      
+      .ai-debug-error {
+        color: #ef4444;
+        font-style: italic;
+      }
+      
+      #entitySelector {
+        width: 100%;
+        padding: 0.3rem;
+        background: #1a1a1a;
+        border: 1px solid #444;
+        color: #fff;
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+      }
     </style>
   </head>
   <body>
@@ -335,6 +426,28 @@
         <button id="breed">Breed Demo</button>
         <button id="ignoreTerrainBtn">Ignore Terrain: Off</button>
         <button id="regenPoi">Regenerate POI</button>
+        <button id="aiDebugBtn">AI Debug</button>
+      </div>
+      
+      <!-- AI Debug Panel -->
+      <div id="aiDebugPanel">
+        <div id="aiDebugHeader">
+          <span>AI Debug Panel</span>
+          <button id="aiDebugClose">×</button>
+        </div>
+        <div id="aiDebugContent">
+          <select id="entitySelector">
+            <option value="">Select an entity...</option>
+          </select>
+          <div id="selectedEntityData">
+            <div class="ai-debug-section">
+              <h4>Click on an entity or select from dropdown</h4>
+              <div class="ai-debug-data">
+                No entity selected. Click on an NPC in a POI interior to view their AI data.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       
       <!-- Movement controls hint -->
@@ -371,6 +484,12 @@ Click "Connect" to join world "alpha"
       let worldData = null;
       let minimapState = 'normal'; // 'hidden', 'normal', 'fullscreen'
       let ignoreTerrain = false; // testing toggle
+      
+      // AI Debug variables
+      let aiDebugVisible = false;
+      let selectedEntityId = null;
+      let currentEntityData = null;
+      let availableEntities = [];
       
       // Game state management
       let gameState = {
@@ -429,6 +548,39 @@ Click "Connect" to join world "alpha"
       
       window.addEventListener('resize', resizeCanvas);
       resizeCanvas();
+      
+      // Canvas click handler for entity selection
+      canvas.addEventListener('click', (e) => {
+        if (!aiDebugVisible || !gameState.currentPOI) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+        
+        // Convert screen coordinates to world coordinates
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const tileSize = 16 * camera.zoom;
+        
+        const worldClickX = camera.x + (clickX - cx) / tileSize;
+        const worldClickY = camera.y + (clickY - cy) / tileSize;
+        
+        // Find clicked entity
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (interior && interior.entities) {
+          for (const entity of interior.entities) {
+            const dx = Math.abs(entity.position.x - worldClickX);
+            const dy = Math.abs(entity.position.y - worldClickY);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Check if click is within entity bounds (approximately 1 tile radius)
+            if (distance <= 1.0) {
+              selectEntity(entity.id);
+              break;
+            }
+          }
+        }
+      });
       
       // Chat panel toggle
       const chatPanel = document.getElementById('chatPanel');
@@ -1062,6 +1214,9 @@ Click "Connect" to join world "alpha"
             
             // Draw entity based on type and state
             ctx.fillStyle = getEntityColorFor(entity);
+            
+            // Highlight selected entity in AI debug mode
+            const isSelected = aiDebugVisible && selectedEntityId === entity.id;
             if (entity.type === 'dragon_egg') {
               // Draw egg shape (ellipse)
               const eggWidth = entitySize * 0.8;
@@ -1112,6 +1267,15 @@ Click "Connect" to join world "alpha"
             } else {
               // Draw regular NPC (rectangle)
               ctx.fillRect(screenX - entitySize/2, screenY - entitySize/2, entitySize, entitySize);
+            }
+            
+            // Draw selection highlight if this entity is selected
+            if (isSelected) {
+              ctx.strokeStyle = '#ffff00'; // Yellow highlight
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.arc(screenX, screenY, entitySize * 0.8, 0, 2 * Math.PI);
+              ctx.stroke();
             }
             
             // Draw name if zoomed in
@@ -1316,14 +1480,18 @@ Click "Connect" to join world "alpha"
         
         // Show interaction prompts
         gameState.nearbyPOI = findNearbyPOI();
-        const nearbyEgg = findNearbyEgg();
+        const nearbyEntity = findNearbyEntity();
         
-        if (nearbyEgg) {
-          // Dragon egg prompt (highest priority)
+        if (nearbyEntity) {
+          // Entity interaction prompt (highest priority)
           ctx.fillStyle = '#ffff00';
           ctx.font = '14px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('Press SPACE to pick up Dragon Egg', canvas.width / 2, canvas.height - 80);
+          const entityName = nearbyEntity.type === 'dragon_egg' ? 'Dragon Egg' :
+                             nearbyEntity.type === 'gold_pile' ? 'Gold' :
+                             nearbyEntity.type === 'treasure' ? 'Treasure' :
+                             nearbyEntity.type.replace(/_/g, ' ');
+          ctx.fillText(`Press SPACE to pick up ${entityName}`, canvas.width / 2, canvas.height - 80);
         } else if (gameState.nearbyPOI && !gameState.currentPOI) {
           // POI entry prompts
           ctx.fillStyle = '#ffff00';
@@ -1345,16 +1513,17 @@ Click "Connect" to join world "alpha"
             ctx.fillText(`Press SPACE to enter ${gameState.nearbyPOI.name}`, canvas.width / 2, canvas.height - 80);
           }
         } else if (gameState.currentPOI) {
-          // Exit prompt
-          ctx.fillStyle = '#ffff00';
-          ctx.font = '14px sans-serif';
-          ctx.textAlign = 'center';
-          const currentInterior = gameState.poiInteriors.get(gameState.currentPOI);
-          if (currentInterior && currentInterior.type === 'dark_cave') {
-            ctx.fillText('Press SPACE to exit cave', canvas.width / 2, canvas.height - 80);
-          } else if (currentInterior && currentInterior.type === 'ruined_castle') {
-            ctx.fillText('Press SPACE to exit castle', canvas.width / 2, canvas.height - 80);
-          } else if (currentInterior && currentInterior.type === 'wizards_tower') {
+          // Exit prompt - only show if at entrance/exit
+          if (isAtEntranceExit()) {
+            ctx.fillStyle = '#ffff00';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            const currentInterior = gameState.poiInteriors.get(gameState.currentPOI);
+            if (currentInterior && currentInterior.type === 'dark_cave') {
+              ctx.fillText('Press SPACE to exit cave', canvas.width / 2, canvas.height - 80);
+            } else if (currentInterior && currentInterior.type === 'ruined_castle') {
+              ctx.fillText('Press SPACE to exit castle', canvas.width / 2, canvas.height - 80);
+            } else if (currentInterior && currentInterior.type === 'wizards_tower') {
             // If near stairs, show stair prompt instead
             const stair = findNearbyStairs();
             if (stair === 'up') {
@@ -1364,8 +1533,9 @@ Click "Connect" to join world "alpha"
             } else {
               ctx.fillText('Press SPACE to exit tower', canvas.width / 2, canvas.height - 80);
             }
-          } else {
-            ctx.fillText('Press SPACE to exit village', canvas.width / 2, canvas.height - 80);
+            } else {
+              ctx.fillText('Press SPACE to exit village', canvas.width / 2, canvas.height - 80);
+            }
           }
         }
       }
@@ -1533,22 +1703,37 @@ Click "Connect" to join world "alpha"
         if (gameState.currentPOI) {
           // Exit nested building if inside one
           if (gameState.currentBuilding) { exitBuilding(); return; }
-          // Check if we're near a dragon egg and can collect it
-          const nearbyEgg = findNearbyEgg();
-          if (nearbyEgg) {
-            collectEgg(nearbyEgg);
+          
+          // First check for ANY nearby entity to interact with (not just eggs)
+          const nearbyEntity = findNearbyEntity();
+          if (nearbyEntity) {
+            // Send interaction to server (matches mobile behavior)
+            log(`[SYSTEM] Interacting with ${nearbyEntity.type}...`);
+            socket.emit('interact-entity', {
+              entityId: nearbyEntity.id,
+              entityType: nearbyEntity.type,
+              entityPosition: nearbyEntity.position,
+              playerPosition: { x: me.x, y: me.y }
+            });
+            return;
+          }
+          
+          // Enter town building if at door
+          const b = findNearbyBuildingDoor();
+          if (b) { enterBuilding(b); return; }
+          
+          // Wizards Tower stairs handling
+          const stair = findNearbyStairs();
+          if (stair) {
+            changeTowerFloor(stair);
+            return;
+          }
+          
+          // Check if we're at the entrance/exit point to leave
+          if (isAtEntranceExit()) {
+            exitPOI();
           } else {
-            // Enter town building if at door
-            const b = findNearbyBuildingDoor();
-            if (b) { enterBuilding(b); return; }
-            // Wizards Tower stairs handling
-            const stair = findNearbyStairs();
-            if (stair) {
-              changeTowerFloor(stair);
-            } else {
-              // Exit to overworld
-              exitPOI();
-            }
+            log('[SYSTEM] Must be at entrance/exit to leave');
           }
         } else {
           // We're in overworld - try to enter nearby POI
@@ -1754,18 +1939,19 @@ Click "Connect" to join world "alpha"
         }
       }
       
-      function findNearbyEgg() {
+      function findNearbyEntity() {
         if (!gameState.currentPOI) return null;
         const interior = gameState.poiInteriors.get(gameState.currentPOI);
         if (!interior || !interior.entities) return null;
         
-        // Find dragon eggs within 1.5 tiles of player
+        // Find any interactable entity within 1.5 tiles of player
         // In interiors, me.x/me.y are already in tile units
         const playerTileX = Math.floor(me.x);
         const playerTileY = Math.floor(me.y);
         
         for (const entity of interior.entities) {
-          if (entity.type === 'dragon_egg') {
+          // Check if entity is interactable (eggs, items, etc.)
+          if (entity.type === 'dragon_egg' || entity.type === 'gold_pile' || entity.type === 'treasure') {
             const dx = Math.abs(entity.position.x - playerTileX);
             const dy = Math.abs(entity.position.y - playerTileY);
             const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1776,6 +1962,23 @@ Click "Connect" to join world "alpha"
           }
         }
         return null;
+      }
+      
+      function findNearbyEgg() {
+        // Legacy function for compatibility - redirects to findNearbyEntity
+        const entity = findNearbyEntity();
+        return entity && entity.type === 'dragon_egg' ? entity : null;
+      }
+      
+      function isAtEntranceExit() {
+        if (!gameState.currentPOI) return false;
+        const interior = gameState.poiInteriors.get(gameState.currentPOI);
+        if (!interior || !interior.entrance) return false;
+        
+        // Check if player is within 1 tile of the entrance/exit
+        const dx = Math.abs(me.x - interior.entrance.x);
+        const dy = Math.abs(me.y - interior.entrance.y);
+        return dx <= 1 && dy <= 1;
       }
       
       function collectEgg(egg) {
@@ -1794,6 +1997,11 @@ Click "Connect" to join world "alpha"
       
       function exitPOI() {
         log('[SYSTEM] Leaving village...');
+        
+        // Notify server we're leaving the POI
+        if (gameState.currentPOI && socket) {
+          socket.emit('exit-poi', { poiId: gameState.currentPOI });
+        }
         
         // Restore overworld position
         if (gameState.overworldPosition) {
@@ -1915,6 +2123,7 @@ Click "Connect" to join world "alpha"
           }
           setupRegenListener();
           setupBuildingListeners();
+          setupAIDebugListeners();
         });
         
         socket.on('disconnect', (r) => { 
@@ -1966,6 +2175,70 @@ Click "Connect" to join world "alpha"
         
         socket.on('poi-entry-error', (data) => {
           log(`[ERROR] Could not enter POI: ${data.error}`);
+        });
+        
+        // Entity interaction responses (matching mobile)
+        socket.on('entity-interaction-success', (data) => {
+          log(`[SUCCESS] ${data.message || 'Item collected!'}`);
+          
+          // Remove the entity from the POI interior
+          if (gameState.currentPOI) {
+            const interior = gameState.poiInteriors.get(gameState.currentPOI);
+            if (interior && interior.entities) {
+              interior.entities = interior.entities.filter(e => e.id !== data.entityId);
+            }
+          }
+        });
+        
+        socket.on('entity-interaction-error', (data) => {
+          log(`[ERROR] Could not interact with entity: ${data.error}`);
+        });
+        
+        socket.on('entity-picked-up', (data) => {
+          // Another player picked up an entity
+          if (data.pickedUpBy !== me.userId) {
+            log(`[INFO] ${data.playerName} collected ${data.entityType}!`);
+            
+            // Remove the entity from the POI interior
+            if (gameState.currentPOI) {
+              const interior = gameState.poiInteriors.get(gameState.currentPOI);
+              if (interior && interior.entities) {
+                interior.entities = interior.entities.filter(e => e.id !== data.entityId);
+              }
+            }
+          }
+        });
+        
+        // Handle entity behavior updates from server
+        socket.on('entity-updates', (data) => {
+          if (!gameState.currentPOI || data.poiId !== gameState.currentPOI) {
+            return; // Not in the relevant POI
+          }
+          
+          // Update entity positions and states
+          const interior = gameState.poiInteriors.get(gameState.currentPOI);
+          if (interior && interior.entities && data.entities) {
+            for (const update of data.entities) {
+              const entity = interior.entities.find(e => e.id === update.entityId);
+              
+              if (entity) {
+                // Update position
+                if (update.position) {
+                  entity.position = update.position;
+                  entity.lastUpdate = Date.now();
+                }
+                
+                // Update other properties
+                if (update.facing !== undefined) {
+                  entity.facing = update.facing;
+                }
+                
+                if (update.disposition) {
+                  entity.disposition = update.disposition;
+                }
+              }
+            }
+          }
         });
         
         socket.on('chunk-state', (st) => {
@@ -2063,6 +2336,23 @@ Click "Connect" to join world "alpha"
         }
       };
 
+      // AI Debug button handler
+      document.getElementById('aiDebugBtn').onclick = () => {
+        toggleAIDebug();
+      };
+      
+      // AI Debug panel close button
+      document.getElementById('aiDebugClose').onclick = () => {
+        toggleAIDebug();
+      };
+      
+      // Entity selector dropdown
+      document.getElementById('entitySelector').addEventListener('change', (e) => {
+        if (e.target.value) {
+          selectEntity(e.target.value);
+        }
+      });
+
       // Acknowledge regeneration
       function setupRegenListener() {
         if (!socket) return;
@@ -2092,6 +2382,123 @@ Click "Connect" to join world "alpha"
           log(`[ERROR] Building entry failed: ${e.error}`);
           gameState.currentBuilding = null;
         });
+      }
+      
+      // AI Debug listeners and functions
+      function setupAIDebugListeners() {
+        if (!socket) return;
+        
+        socket.on('entity-ai-data', (data) => {
+          currentEntityData = data;
+          updateAIDebugDisplay(data);
+        });
+        
+        socket.on('poi-entities', (data) => {
+          availableEntities = data.entities || [];
+          updateEntitySelector();
+        });
+      }
+      
+      function toggleAIDebug() {
+        aiDebugVisible = !aiDebugVisible;
+        const panel = document.getElementById('aiDebugPanel');
+        const btn = document.getElementById('aiDebugBtn');
+        
+        if (aiDebugVisible) {
+          panel.classList.add('visible');
+          btn.textContent = 'Close AI Debug';
+          btn.style.background = '#ef4444';
+          
+          // Load entities if in POI
+          if (gameState.currentPOI && socket) {
+            socket.emit('get-poi-entities', { poiId: gameState.currentPOI });
+          }
+        } else {
+          panel.classList.remove('visible');
+          btn.textContent = 'AI Debug';
+          btn.style.background = '';
+        }
+      }
+      
+      function selectEntity(entityId) {
+        if (!entityId || !socket) return;
+        selectedEntityId = entityId;
+        socket.emit('get-entity-ai-data', { entityId });
+      }
+      
+      function updateEntitySelector() {
+        const selector = document.getElementById('entitySelector');
+        selector.innerHTML = '<option value="">Select an entity...</option>';
+        
+        for (const entity of availableEntities) {
+          const option = document.createElement('option');
+          option.value = entity.entityId;
+          option.textContent = `${entity.entityType} (${entity.disposition}) - ${entity.entityId}`;
+          selector.appendChild(option);
+        }
+        
+        if (selectedEntityId) {
+          selector.value = selectedEntityId;
+        }
+      }
+      
+      function updateAIDebugDisplay(data) {
+        const container = document.getElementById('selectedEntityData');
+        
+        if (data.error) {
+          container.innerHTML = `
+            <div class="ai-debug-section">
+              <h4>Error</h4>
+              <div class="ai-debug-data ai-debug-error">${data.error}</div>
+            </div>
+          `;
+          return;
+        }
+        
+        const nearbyPlayers = Array.isArray(data.nearbyPlayers) ? data.nearbyPlayers.length : 0;
+        const position = data.position || {};
+        const blackboard = data.blackboardData || {};
+        
+        container.innerHTML = `
+          <div class="ai-debug-section">
+            <h4>Entity Info</h4>
+            <div class="ai-debug-data">
+              <span class="ai-debug-key">ID:</span> <span class="ai-debug-value">${data.entityId}</span><br>
+              <span class="ai-debug-key">Type:</span> <span class="ai-debug-value">${data.entityType}</span><br>
+              <span class="ai-debug-key">Disposition:</span> <span class="ai-debug-value">${data.disposition}</span><br>
+              <span class="ai-debug-key">POI:</span> <span class="ai-debug-value">${data.poiId || 'N/A'}</span>
+            </div>
+          </div>
+          
+          <div class="ai-debug-section">
+            <h4>Position & Movement</h4>
+            <div class="ai-debug-data">
+              <span class="ai-debug-key">Position:</span> <span class="ai-debug-value">(${(position.x || 0).toFixed(1)}, ${(position.y || 0).toFixed(1)})</span><br>
+              <span class="ai-debug-key">Target:</span> <span class="ai-debug-value">${blackboard.targetPosition ? `(${blackboard.targetPosition.x.toFixed(1)}, ${blackboard.targetPosition.y.toFixed(1)})` : 'None'}</span><br>
+              <span class="ai-debug-key">Moving:</span> <span class="ai-debug-value">${blackboard.isMoving ? 'Yes' : 'No'}</span><br>
+              <span class="ai-debug-key">Facing:</span> <span class="ai-debug-value">${blackboard.facing || 'N/A'}</span>
+            </div>
+          </div>
+          
+          <div class="ai-debug-section">
+            <h4>Behavior Tree</h4>
+            <div class="ai-debug-data">
+              <span class="ai-debug-key">Type:</span><br>
+              <span class="ai-debug-value">${data.behaviorTreeType}</span>
+            </div>
+          </div>
+          
+          <div class="ai-debug-section">
+            <h4>State</h4>
+            <div class="ai-debug-data">
+              <span class="ai-debug-key">Health:</span> <span class="ai-debug-value">${data.health || 'N/A'}/${data.maxHealth || 'N/A'}</span><br>
+              <span class="ai-debug-key">Nearby Players:</span> <span class="ai-debug-value">${nearbyPlayers}</span><br>
+              <span class="ai-debug-key">Animation:</span> <span class="ai-debug-value">${blackboard.animationState || 'default'}</span><br>
+              <span class="ai-debug-key">Needs Sync:</span> <span class="ai-debug-value">${data.needsSync ? 'Yes' : 'No'}</span><br>
+              <span class="ai-debug-key">Last Update:</span> <span class="ai-debug-value">${new Date(data.lastUpdate).toLocaleTimeString()}</span>
+            </div>
+          </div>
+        `;
       }
       
       // Hide controls hint after first movement
